@@ -156,6 +156,41 @@ final class CollectionSmokeTests: XCTestCase {
         s.assertHealthy()
     }
 
+    /// Zarch's desktop version came as an archive of imploded (PKZIP 1)
+    /// members: a hard disc is built from it on an A440, and !Zarch run
+    /// (it starts on the icon bar; a click starts the game).
+    func testZarchFromZip() throws {
+        guard ProcessInfo.processInfo.environment["MACARCH_GAME_TESTS"] != nil else { throw XCTSkip("set MACARCH_GAME_TESTS=1") }
+        guard let rom = GameSmokeTests.romDir("riscos3_11") else { throw XCTSkip("RISC OS 3.11 ROM not present") }
+        let zip = GameSmokeTests.root.appendingPathComponent("discimages/Zarch (1989)(Superior Software)(Better desktop integration).zip").path
+        guard let bytes = FileManager.default.contents(atPath: zip) else { throw XCTSkip("Zarch archive not present") }
+        let hd = NSTemporaryDirectory() + "macarch-zarch-\(UUID().uuidString).hdf"
+        defer { try? FileManager.default.removeItem(atPath: hd) }
+        try ADFSHardDiscBuilder.create(path: hd, geometry: HardDiscGeometry.presets[0].geometry, name: "HardDisc4",
+                                       items: try ADFSHardDiscBuilder.items(fromZip: [UInt8](bytes)))
+        var c = MachineConfiguration(model: .a440)
+        c.romPaths = [rom]
+        c.hardDiscs = [hd]
+        c.powerOnKeys = [0x34]
+        let m = try Machine(configuration: c)
+        m.powerOn()
+        let s = Script(m, name: "zarch-zip")
+        s.waitUntil("desktop", timeout: 40) { m.recentText.contains("Apps") }
+        s.wait(1)
+        let desktop = m.currentFrame
+        s.press("f12")
+        s.type("Filer_Run ADFS::4.$.!Zarch\n\n")
+        s.wait(5)
+        s.capture("1-iconbar")
+        s.pointTip(at: 627, 257)                    // Zarch waits on the icon bar
+        s.click()
+        s.wait(25)
+        s.capture("2-zarch")
+        XCTAssertGreaterThan(changed(desktop, m.currentFrame), m.currentFrame.pixels.count / 2, "left the desktop for the game")
+        XCTAssertGreaterThan(colours(m.currentFrame), 12)
+        s.assertHealthy()
+    }
+
     // MARK: - Multi-disc titles (2026-10-22)
 
     /// Swaps the disc as a person would: out, a moment's pause, then in.
@@ -315,8 +350,11 @@ final class CollectionSmokeTests: XCTestCase {
         }
         let hd = NSTemporaryDirectory() + "macarch-doom-\(UUID().uuidString).hdf"
         defer { try? FileManager.default.removeItem(atPath: hd) }
+        // The drive is made from Doom, and !NetUtils added afterwards (as
+        // Add Files to Hard Disc does), on 512-byte IDE sectors.
         try ADFSHardDiscBuilder.create(path: hd, geometry: HardDiscGeometry.idePresets[1].geometry, name: "HardDisc4",
-                                       items: try ADFSHardDiscBuilder.items(fromZip: [UInt8](doom)) + ADFSHardDiscBuilder.items(fromZip: [UInt8](netUtils)))
+                                       items: try ADFSHardDiscBuilder.items(fromZip: [UInt8](doom)))
+        try ADFSHardDiscWriter.add(path: hd, items: try ADFSHardDiscBuilder.items(fromZip: [UInt8](netUtils)))
         var c = MachineConfiguration(model: .a5000)
         c.romPaths = [rom]
         c.ramKB = 4096

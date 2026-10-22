@@ -246,3 +246,15 @@
 - New collection tests: Apocalypse, Gods, Cannon Fodder, Conqueror, Hostages, No Excuses and Rotor, Xenon 2, Stunt Racer 2000. All 15 collection tests pass.
 - Doom Trilogy runs (Ultimate Doom's demo, `testDoom`) from a hard disc built from its ZIP plus Acorn's !NetUtils, which provides the BorderUtils module Doom+ needs on RISC OS 3.1.
 - Release test builds need `-Xswiftc -enable-testing` with Xcode 27's SwiftPM (a clean build otherwise fails to resolve the ArchimedesCore module); the documented commands include it.
+
+## Adding files to an existing hard disc; imploded ZIPs (2026-10-22)
+
+- `ADFSHardDiscWriter` adds files to an existing old-map drive (what MacArch makes, and !HForm's old-map option). Each file takes the first big enough area in the free space map, aligned to the sector size. Missing directories are made, a file of the same name is replaced and its space freed, and each changed directory's master sequence number goes up. The work is done on a clone of the image, which then takes its place, so a failure leaves the drive as it was. New-map ("E") drives are refused with a message.
+- App: Hard Disc ▸ Add Files to Hard Disc… for a fitted drive. It takes several ZIPs or folders at once, says which files would be replaced, then restarts the machine: RISC OS keeps the map and directories in memory, so writes from the old machine are stopped first. New Hard Disc from Files… also takes several sources now. Dropping a ZIP or folder that isn't a ROM on a running window offers to add it to a fitted drive, or to make a new one; several can be dropped at once.
+- CLI: `macarch-cli hard-disc-add FILE SOURCE...`.
+- ZIP method 6 (implode, PKZIP 1) is expanded (`ZipImplode`, from the APPNOTE), and every member's CRC is now checked. Zarch's desktop version (`Zarch (…)(Better desktop integration).zip`) needed it.
+- Tests:
+  - `HardDiscBuilderTests` covers ST506 and IDE drives: planning changes nothing, adds, replacements, new directories, sector alignment, freed space merging back, conflicts, and a drive left unchanged when an add fails.
+  - RISC OS reads replaced and added files, then makes a directory, saves into it and deletes a file. The drive it leaves can still be added to.
+  - `testDoom` now builds the drive from Doom alone and adds !NetUtils afterwards.
+  - `testZarchFromZip` runs the imploded archive.

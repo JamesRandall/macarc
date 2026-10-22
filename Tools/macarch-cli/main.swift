@@ -28,7 +28,7 @@ func fail(_ msg: String, code: Int32) -> Never {
 
 var args = Array(CommandLine.arguments.dropFirst())
 guard let command = args.first else {
-    fail("usage: macarch-cli run|assemble|disk-inspect|rom-info|manifest|snapshot-info|hard-disc-create ...", code: 1)
+    fail("usage: macarch-cli run|assemble|disk-inspect|rom-info|manifest|snapshot-info|hard-disc-create|hard-disc-add ...", code: 1)
 }
 args.removeFirst()
 
@@ -117,6 +117,16 @@ case "hard-disc-create":
         } else if flag("--blank") { try HardDiscImage.create(path: p, geometry: g) } else { try ADFSFormatter.createFormattedImage(path: p, geometry: g, name: "HardDisc4") }
     } catch { fail("\(error)", code: 3) }
     print(p)
+
+case "hard-disc-add":
+    // hard-disc-add <file> <zip or folder>...: copies the files onto an existing old-map drive
+    guard args.count >= 2 else { fail("hard-disc-add <file> <zip or folder>...", code: 1) }
+    do {
+        let items = try args.dropFirst().flatMap { try ADFSHardDiscBuilder.items(from: $0) }
+        let s = try ADFSHardDiscWriter.add(path: args[0], items: items)
+        print(JSON.encode(["added": s.added.joined(separator: " "), "replaced": s.replaced.joined(separator: " "),
+                           "directoriesMade": s.directoriesMade.joined(separator: " "), "bytesFree": String(s.bytesFree)]))
+    } catch { fail("\(error)", code: 3) }
 
 case "rom-info":
     do {

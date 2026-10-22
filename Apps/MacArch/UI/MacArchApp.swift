@@ -256,6 +256,8 @@ struct HardDiscItems: View {
                 Section("Drive :\(drive + 4)" + (machine?.hardDiscName(drive).map { " — \($0)" } ?? "")) {
                     Button("New Hard Disc…") { machine?.newHardDisc(drive: drive) }
                     Button("New Hard Disc from Files…") { machine?.newHardDiscFromFiles(drive: drive) }
+                    Button("Add Files to Hard Disc…") { machine?.addFilesToHardDisc(drive: drive) }
+                        .disabled(machine?.hardDiscName(drive) == nil)
                     Button("Open Hard Disc…") { machine?.openHardDisc(drive: drive) }
                     Button("Remove Hard Disc") { machine?.ejectHardDisc(drive: drive) }
                         .disabled(machine?.hardDiscName(drive) == nil)
@@ -295,6 +297,11 @@ struct MachineWindow: View {
         .navigationTitle(machine.title)
         .dropDestination(for: URL.self) { urls, _ in
             guard let url = urls.first else { return false }
+            // Several archives or folders at once: files for a hard disc.
+            if urls.count > 1, machine.host != nil, urls.allSatisfy({ $0.pathExtension.lowercased() == "zip" || $0.hasDirectoryPath }) {
+                machine.offerFilesForHardDisc(urls)
+                return true
+            }
             return machine.open(url)
         }
         .onOpenURL { _ = machine.open($0) }

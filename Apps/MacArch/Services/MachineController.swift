@@ -177,7 +177,8 @@ final class MachineController {
     /// machine, power cycled, with the floppy kept. A new model brings back
     /// the processor, memory and hard discs it last had.
     func setHardware(model newModel: MachineModel? = nil, cpu newCPU: CPUType? = nil, ramKB newRAM: Int? = nil,
-                     monitor newMonitor: MonitorType? = nil, romPath newROM: String? = nil, hardDiscs newDiscs: [String?]? = nil) {
+                     monitor newMonitor: MonitorType? = nil, romPath newROM: String? = nil, hardDiscs newDiscs: [String?]? = nil,
+                     reload: Bool = false) {
         var hw = Hardware(model: model, cpu: cpu, ramKB: ramKB, monitor: monitor, romPath: romPath ?? "", hardDiscs: hardDiscs)
         if let newModel, newModel != hw.model {
             let s = AppSettings.shared
@@ -189,13 +190,13 @@ final class MachineController {
         if let newRAM { hw.ramKB = newRAM }
         if let newROM { hw.romPath = newROM }
         if let newDiscs { hw.hardDiscs = newDiscs }
-        guard hw != hardware || host == nil else { return }
+        guard reload || hw != hardware || host == nil else { return }
         guard let host else {
             // No machine yet: remember the choice, and start if there is a ROM.
             if hw.romPath.isEmpty { model = hw.model; cpu = hw.cpu; ramKB = hw.ramKB; monitor = hw.monitor; hardDiscs = hw.hardDiscs } else { adopt(hw); start(romPath: hw.romPath) }
             return
         }
-        if hw.hardDiscs != hardDiscs || hw.model != model { syncHardDiscs() }
+        if reload || hw.hardDiscs != hardDiscs || hw.model != model { syncHardDiscs() }
         do {
             let (m, cmos, fitted) = try makeMachine(hw)
             stopRecordingIfNeeded()
@@ -372,7 +373,9 @@ final class MachineController {
             // Not a disc: perhaps ROMs (a ROM image, chips, a folder or a ZIP).
             Task {
                 let added = await ROMLibrary.shared.add([url])
-                if added.isEmpty {
+                if added.isEmpty, url.pathExtension.lowercased() == "zip" || isDir.boolValue {
+                    offerFilesForHardDisc([url])
+                } else if added.isEmpty {
                     alert("MacArch can't open \(url.lastPathComponent)", "It isn't a floppy disc image, a saved state or a RISC OS ROM.")
                 } else {
                     let names = added.map(\.found.rom.versionString).joined(separator: ", ")
@@ -461,23 +464,42 @@ final class MachineController {
         fitHardDisc(url.path, drive: drive)
     }
 
-    /// Creates a hard disc holding the files from a ZIP archive or a folder
-    /// (software that came as files rather than discs), and fits it.
-    func newHardDiscFromFiles(drive: Int) {
+    /// Asks for ZIP archives and folders of RISC OS files.
+    private func chooseFileSources(_ message: String) -> [URL] {
         let open = NSOpenPanel()
         open.canChooseDirectories = true
         open.canChooseFiles = true
+        open.allowsMultipleSelection = true
         open.allowedContentTypes = [.zip, .folder]
-        open.message = "Choose a ZIP archive or a folder of RISC OS files to copy onto a new hard disc for drive \(drive + 4). Filetypes come from the archive's RISC OS information, or from \",xxx\" suffixes on names."
+        open.message = message + " Filetypes come from the archives' RISC OS information, or from \",xxx\" suffixes on names."
         open.prompt = "Choose"
-        guard open.runModal() == .OK, let source = open.url else { return }
-        let items: [ADFSHardDiscBuilder.Item]
-        do { items = try ADFSHardDiscBuilder.items(from: source.path) } catch {
-            alert("Could not read \(source.lastPathComponent)", "\(error)")
-            return
+        return open.runModal() == .OK ? open.urls : []
+    }
+
+    /// The files from each source, merged (later sources win).
+    private func items(from sources: [URL]) -> [ADFSHardDiscBuilder.Item]? {
+        var items: [ADFSHardDiscBuilder.Item] = []
+        for source in sources {
+            do { items += try ADFSHardDiscBuilder.items(from: source.path) } catch {
+                alert("Could not read \(source.lastPathComponent)", "\(error)")
+                return nil
+            }
         }
+        var seen: Set<String> = []
+        return items.reversed().filter { seen.insert($0.path.joined(separator: ".").uppercased()).inserted }.reversed()
+    }
+
+    private static func describe(_ sources: [URL]) -> String {
+        sources.count == 1 ? sources[0].lastPathComponent : "\(sources.count) archives and folders"
+    }
+
+    /// Creates a hard disc holding the files from ZIP archives or folders
+    /// (software that came as files rather than discs), and fits it.
+    func newHardDiscFromFiles(drive: Int, sources given: [URL]? = nil) {
+        let sources = given ?? chooseFileSources("Choose ZIP archives or folders of RISC OS files to copy onto a new hard disc for drive \(drive + 4).")
+        guard !sources.isEmpty, let items = items(from: sources) else { return }
         let needed = items.reduce(0x10000) { $0 + $1.data.count + 2048 }
-        guard let (url, geometry) = chooseNewHardDisc(drive: drive, message: "A new hard disc holding the \(items.count) files from \(source.lastPathComponent), for drive \(drive + 4). The machine will be power cycled.", minimumBytes: needed) else { return }
+        guard let (url, geometry) = chooseNewHardDisc(drive: drive, message: "A new hard disc holding the \(items.count) files from \(Self.describe(sources)), for drive \(drive + 4). The machine will be power cycled.", minimumBytes: needed) else { return }
         do {
             try ADFSHardDiscBuilder.create(path: url.path, geometry: geometry, name: (url.lastPathComponent as NSString).deletingPathExtension, items: items)
         } catch {
@@ -486,6 +508,62 @@ final class MachineController {
             return
         }
         fitHardDisc(url.path, drive: drive)
+    }
+
+    /// Copies the files from ZIP archives or folders onto the drive's disc,
+    /// alongside what is there (power cycles, as RISC OS keeps the drive's
+    /// map and directories in memory).
+    func addFilesToHardDisc(drive: Int, sources given: [URL]? = nil) {
+        guard hardDiscs.indices.contains(drive), let path = hardDiscs[drive] else { return }
+        let name = (path as NSString).lastPathComponent
+        let sources = given ?? chooseFileSources("Choose ZIP archives or folders of RISC OS files to add to \(name) (drive \(drive + 4)).")
+        guard !sources.isEmpty, let items = items(from: sources) else { return }
+        let plan: ADFSHardDiscWriter.Summary
+        do { plan = try ADFSHardDiscWriter.plan(path: path, items: items) } catch {
+            alert("Could not add the files to \(name)", "\(error)")
+            return
+        }
+        let a = NSAlert()
+        a.messageText = "Add \(items.count) files from \(Self.describe(sources)) to \(name)?"
+        var info = "The machine will be restarted so RISC OS sees them."
+        if !plan.replaced.isEmpty {
+            let shown = plan.replaced.prefix(6).map { "$." + $0 }.joined(separator: "\n")
+            info = "\(plan.replaced.count) files already on the disc will be replaced:\n\(shown)" + (plan.replaced.count > 6 ? "\n…" : "") + "\n\n" + info
+        }
+        a.informativeText = info + " \(plan.bytesFree / 1024) KB will be left free."
+        a.addButton(withTitle: plan.replaced.isEmpty ? "Add" : "Replace")
+        a.addButton(withTitle: "Cancel")
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        // Stop the running machine writing to the drive behind the change.
+        host?.sendAndWait { s in s.machine.hdc?.drives.forEach { $0?.synchronize(); $0?.suppressWrites = true } }
+        do { try ADFSHardDiscWriter.add(path: path, items: items) } catch {
+            host?.sendAndWait { s in s.machine.hdc?.drives.forEach { $0?.suppressWrites = false } }
+            alert("Could not add the files to \(name)", "\(error)")
+            return
+        }
+        setHardware(hardDiscs: hardDiscs, reload: true)
+    }
+
+    /// Dropped archives or folders that aren't ROMs: offered to a fitted
+    /// hard disc, or as a new one.
+    func offerFilesForHardDisc(_ sources: [URL]) {
+        let fitted = hardDiscs.indices.filter { hardDiscs[$0] != nil }
+        guard model.hardDiscSlots > 0 else {
+            alert("MacArch can't open \(Self.describe(sources))", "The \(model.displayName) has no hard disc to copy files onto. Choose a machine with one from the Machine menu.")
+            return
+        }
+        let a = NSAlert()
+        a.messageText = "Copy the files from \(Self.describe(sources)) onto a hard disc?"
+        a.informativeText = "RISC OS software that comes as files rather than disc images runs from a hard disc."
+        for d in fitted { a.addButton(withTitle: "Add to \(hardDiscName(d) ?? "Drive :\(d + 4)")") }
+        a.addButton(withTitle: "New Hard Disc…")
+        a.addButton(withTitle: "Cancel")
+        let choice = a.runModal().rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+        if choice < fitted.count {
+            addFilesToHardDisc(drive: fitted[choice], sources: sources)
+        } else if choice == fitted.count {
+            newHardDiscFromFiles(drive: (0..<model.hardDiscSlots).first { hardDiscs.indices.contains($0) ? hardDiscs[$0] == nil : true } ?? 0, sources: sources)
+        }
     }
 
     /// Takes the drive out (power cycles). The image file keeps its contents.

@@ -113,4 +113,100 @@ final class HardDiscBuilderTests: XCTestCase {
         let loaded = (0..<big.count).map { m.memc.debugRead(0x10000 + UInt32($0), space: .logical) ?? 0 }
         XCTAssertEqual(loaded, big)
     }
+
+    // MARK: Adding to an existing drive
+
+    static func listing(_ path: String) throws -> [String: Int] {
+        let v = try ADFSHardDiscWriter.Volume(path: path)
+        var out: [String: Int] = [:]
+        func walk(_ address: Int, _ prefix: String) throws {
+            for e in try v.directory(at: address, path: prefix).entries {
+                let name = prefix + (prefix.isEmpty ? "" : ".") + String(decoding: e.name, as: UTF8.self)
+                if e.isDirectory { try walk(e.sector * 256, name) } else { out[name] = Int(e.length) }
+            }
+        }
+        try walk(0x400, "")
+        return out
+    }
+
+    func testAddFilesToExistingDrive() throws {
+        for g in [HardDiscGeometry(cylinders: 615, heads: 4), HardDiscGeometry(cylinders: 977, heads: 5, sectorsPerTrack: 17, sectorSize: 512)] {
+            let path = NSTemporaryDirectory() + "macarch-add-\(UUID().uuidString).hdf"
+            defer { try? FileManager.default.removeItem(atPath: path) }
+            try ADFSHardDiscBuilder.create(path: path, geometry: g, name: "Base", items: [
+                .init(path: ["Games", "Notes"], data: [UInt8](repeating: 1, count: 300), type: 0xFFF),
+                .init(path: ["zeta"], data: [1, 2, 3], type: 0xFFD),
+            ])
+            let before = try Data(contentsOf: URL(fileURLWithPath: path))
+            let items: [ADFSHardDiscBuilder.Item] = [
+                .init(path: ["Games", "Extra"], data: [UInt8](repeating: 2, count: 5000), type: 0xFFD),
+                .init(path: ["New", "Deep", "File"], data: [UInt8](repeating: 3, count: 10), type: 0xFFD),
+                .init(path: ["zeta"], data: [UInt8](repeating: 4, count: 4000), type: 0xFFD),
+                .init(path: ["Alpha"], data: [], type: 0xFFD),
+            ]
+            let plan = try ADFSHardDiscWriter.plan(path: path, items: items)
+            XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), before, "planning changes nothing")
+            XCTAssertEqual(plan.added, ["Games.Extra", "New.Deep.File", "Alpha"])
+            XCTAssertEqual(plan.replaced, ["zeta"])
+            XCTAssertEqual(plan.directoriesMade, ["New", "New.Deep"])
+
+            let done = try ADFSHardDiscWriter.add(path: path, items: items)
+            XCTAssertEqual(done, plan)
+            XCTAssertEqual(try Self.listing(path), ["Alpha": 0, "Games.Extra": 5000, "Games.Notes": 300, "New.Deep.File": 10, "zeta": 4000])
+            let v = try ADFSHardDiscWriter.Volume(path: path)
+            XCTAssertEqual(try v.directory(at: 0x400, path: "$").entries.map { String(decoding: $0.name, as: UTF8.self) }, ["Alpha", "Games", "New", "zeta"])
+            XCTAssertTrue(v.free.allSatisfy { $0.start % v.unit == 0 }, "allocation keeps to whole sectors")
+            XCTAssertEqual(v.free.reduce(0) { $0 + $1.length } * 256, done.bytesFree)
+
+            // Shrinking a file gives its space back, merged with its neighbours.
+            try ADFSHardDiscWriter.add(path: path, items: [.init(path: ["zeta"], data: [5], type: 0xFFD)])
+            let after = try ADFSHardDiscWriter.Volume(path: path)
+            XCTAssertLessThanOrEqual(after.free.count, 2)
+            XCTAssertThrowsError(try ADFSHardDiscWriter.add(path: path, items: [.init(path: ["Games"], data: [], type: 0xFFD)]))
+            XCTAssertThrowsError(try ADFSHardDiscWriter.add(path: path, items: [.init(path: ["Big"], data: [UInt8](repeating: 0, count: g.byteCount), type: 0xFFD)]))
+            XCTAssertEqual(try Self.listing(path)["zeta"], 1, "a failed add leaves the drive as it was")
+        }
+    }
+
+    /// RISC OS reads files added to a drive, and can go on writing to it.
+    func testRISCOSUsesDriveAfterAdding() throws {
+        guard let dir = GameSmokeTests.romDir("riscos3_11") else { throw XCTSkip("RISC OS 3.11 ROM not present") }
+        let path = NSTemporaryDirectory() + "macarch-added-\(UUID().uuidString).hdf"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        try ADFSHardDiscBuilder.create(path: path, geometry: HardDiscGeometry(cylinders: 615, heads: 4), name: "Built", items: [
+            .init(path: ["Games", "Notes"], data: Array("Original\n".utf8), type: 0xFFF),
+            .init(path: ["Games", "Old"], data: [UInt8](repeating: 9, count: 20_000), type: 0xFFD),
+        ])
+        let big = (0..<70_000).map { UInt8(truncatingIfNeeded: $0 &* 7) }
+        try ADFSHardDiscWriter.add(path: path, items: [
+            .init(path: ["Games", "Notes"], data: Array("Replaced by MacArch\n".utf8), type: 0xFFF),
+            .init(path: ["Games", "Old"], data: [1], type: 0xFFD),
+            .init(path: ["Added", "Blob"], data: big, type: 0xFFD),
+        ])
+        var c = MachineConfiguration(model: .a440)
+        c.romPaths = [dir]
+        c.hardDiscs = [path]
+        c.powerOnKeys = [0x34]
+        let m = try Machine(configuration: c)
+        m.powerOn()
+        m.run(seconds: 25)
+        m.keyDown(0x0C); m.run(seconds: 0.1); m.keyUp(0x0C) // F12
+        m.run(seconds: 1)
+        m.scheduleTyping("*Type :4.$.Games.Notes\n*Load :4.$.Added.Blob 10000\n*CDir :4.$.Added.Made\n*Save :4.$.Added.Made.Copy 10000 +8000\n*Delete :4.$.Games.Old\n*Ex :4.$.Added\n", intervalMs: 40)
+        m.run(seconds: 25)
+        m.hdc?.drives.forEach { $0?.synchronize() }
+        let text = m.recentText
+        XCTAssertTrue(text.contains("Replaced by MacArch"), String(text.suffix(600)))
+        XCTAssertTrue(text.contains("Made"), String(text.suffix(600)))
+        for bad in ["Broken directory", "Bad free space map", "Map full", "not found", "Disc error"] {
+            XCTAssertFalse(text.contains(bad), "\(bad): " + String(text.suffix(600)))
+        }
+        let loaded = (0..<big.count).map { m.memc.debugRead(0x10000 + UInt32($0), space: .logical) ?? 0 }
+        XCTAssertEqual(loaded, big)
+        // What RISC OS wrote is still a drive files can be added to.
+        let listing = try Self.listing(path)
+        XCTAssertEqual(listing["Added.Made.Copy"], 0x8000)
+        XCTAssertNil(listing["Games.Old"])
+        try ADFSHardDiscWriter.add(path: path, items: [.init(path: ["Added", "Made", "Again"], data: [1, 2], type: 0xFFD)])
+    }
 }

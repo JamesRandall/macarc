@@ -1,7 +1,7 @@
 import Foundation
 import zlib
 
-/// Reads ZIP archives (stored and deflated members), including the Acorn
+/// Reads ZIP archives (stored, deflated and imploded members), including the Acorn
 /// extra field ("AC", 0x4341) that RISC OS archivers such as SparkFS use to
 /// keep a file's load and execution addresses and attributes:
 ///
@@ -41,7 +41,7 @@ public enum ZipArchive {
         for _ in 0..<count {
             guard c + 46 <= d.count, u32(c) == 0x0201_4B50 else { throw MediaError.unsupportedFormat("zip: bad central directory") }
             let flags = u16(c + 8), method = u16(c + 10), time = u16(c + 12), date = u16(c + 14)
-            let csize = Int(u32(c + 20)), usize = Int(u32(c + 24))
+            let crc = u32(c + 16), csize = Int(u32(c + 20)), usize = Int(u32(c + 24))
             let nameLen = u16(c + 28), extraLen = u16(c + 30), commentLen = u16(c + 32)
             let local = Int(u32(c + 42))
             guard c + 46 + nameLen + extraLen <= d.count else { throw MediaError.unsupportedFormat("zip: truncated header") }
@@ -66,9 +66,13 @@ public enum ZipArchive {
             case 8:
                 guard let x = inflateRaw(raw, expected: usize) else { throw MediaError.unsupportedFormat("zip: \(path) is corrupt") }
                 m.data = x
+            case 6: m.data = try ZipImplode.explode(raw, size: usize, flags: flags)
             default:
-                throw MediaError.unsupportedFormat("zip: \(path) uses compression method \(method) (only stored and deflate are supported)")
+                throw MediaError.unsupportedFormat("zip: \(path) uses compression method \(method) (only stored, deflate and implode are supported)")
             }
+            guard flags & 1 == 0 else { throw MediaError.unsupportedFormat("zip: \(path) is encrypted") }
+            let check = m.data.withUnsafeBufferPointer { UInt32(zlib.crc32(0, $0.baseAddress, uInt($0.count))) }
+            guard check == crc else { throw MediaError.unsupportedFormat("zip: \(path) is corrupt (its CRC doesn't match)") }
             out.append(m)
         }
         return out
