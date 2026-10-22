@@ -21,6 +21,7 @@ struct MacArchApp: App {
                     .disabled(!Updates.shared.isAvailable)
             }
             CommandGroup(after: .appSettings) { ROMsMenuItem() }
+            CommandGroup(replacing: .help) { WhatsNewMenuItem() }
             CommandGroup(replacing: .newItem) {
                 Button("Open Disc…") { machine?.openDisc() }
                     .keyboardShortcut("o")
@@ -151,6 +152,8 @@ struct MacArchApp: App {
             .windowResizability(.contentSize)
         Window("MCP Activity", id: "mcp-log") { AgentLogView() }
             .defaultSize(width: 900, height: 560)
+        Window("What's New", id: "whats-new") { WhatsNewView() }
+            .defaultSize(width: 520, height: 520)
 
         Settings {
             SettingsView()
@@ -295,6 +298,9 @@ struct MachineWindow: View {
             return machine.open(url)
         }
         .onOpenURL { _ = machine.open($0) }
+        .onAppear {
+            if WhatsNew.shouldShowOnLaunch() { openWindow(id: "whats-new") }
+        }
         .sheet(isPresented: $machine.showingTimeline) { RewindSheet(machine: machine) }
         .onChange(of: machine.debuggerRequested) {
             if machine.debuggerRequested {

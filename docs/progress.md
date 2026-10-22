@@ -228,3 +228,13 @@
 - `scripts/release.sh` builds `appcast.xml` from the published feed plus the new zip, signed with the key in the login keychain under the account `macarch`. `--publish` tags and creates the GitHub release with the DMG, the zip and the appcast.
 - About MacArch links to github.com/JamesRandall/macarc and jamesdrandall.com.
 - Verified: the ad hoc bundle builds, passes `codesign --verify --deep --strict` and launches with the framework embedded. Not yet verified: a signed release, the appcast, and an update being installed.
+
+## What's New (2026-10-22)
+
+- `WHATSNEW.md` at the repo root holds the release notes, one `## VERSION [— DATE]` section per release. `build-app.sh` copies it into Resources as `WhatsNew.md`, and `swift run` reads the repo's copy.
+- `WhatsNew` parses it and records the version run (`whatsNewSeen`). On the first launch after an update, the first machine window opens the What's New window, with releases newer than the last version run (and not newer than this build) marked New. Help ▸ What's New in MacArch opens it any time. A fresh install records the version without showing it.
+- `scripts/release.sh` requires the version's section. It writes it to `notes.md` for `gh release create --notes-file`, and beside the zip as `MacArch-VERSION.md` for `generate_appcast --embed-release-notes`.
+- Verified:
+  - A test appcast has `<description sparkle:format="markdown">` with the notes, signed with the `macarch` keychain key.
+  - Self-test (`MACARCH_SELFTEST_WHATSNEW=0.0.9`) opens the window with 0.1.0 marked New. With 0.1.0 as the last version, it doesn't open.
+  - The Help menu has the item.

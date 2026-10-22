@@ -161,6 +161,15 @@ enum SelfTest {
                     }
                 }
             }
+            // MACARCH_SELFTEST_WHATSNEW=VERSION: the last version run; the window opens if there's news.
+            if env["MACARCH_SELFTEST_WHATSNEW"] != nil,
+               let window = NSApp.windows.first(where: { $0.title == "What's New" && $0.isVisible }),
+               let frameView = window.contentView?.superview,
+               let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) {
+                frameView.cacheDisplay(in: frameView.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?
+                    .write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-whatsnew.png")))
+            }
             var text = ""
             @MainActor func walk(_ menu: NSMenu, _ depth: Int) {
                 // SwiftUI refreshes menu items as a menu opens.

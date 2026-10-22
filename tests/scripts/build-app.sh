@@ -30,6 +30,8 @@ xcrun actool Apps/MacArch/Resources/AppIcon.icon --compile "$APP/Contents/Resour
     --minimum-deployment-target 14.0 --app-icon AppIcon \
     --output-partial-info-plist build/AppIcon-partial.plist > /dev/null
 rm -f build/AppIcon-partial.plist
+# The release notes, for Help > What's New.
+cp WHATSNEW.md "$APP/Contents/Resources/WhatsNew.md"
 # ditto keeps the framework's symlinks.
 ditto "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 
