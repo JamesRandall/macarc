@@ -299,4 +299,73 @@ final class CollectionSmokeTests: XCTestCase {
         XCTAssertGreaterThan(colours(s.m.currentFrame), 12, "the menu is drawn")
         s.assertHealthy()
     }
+
+    /// Doom Trilogy (R-Comp, 1998) on a hard disc built from its ZIP plus
+    /// Acorn's !NetUtils (whose BorderUtils module Doom+ needs on RISC OS
+    /// 3.1, where it would otherwise load System:Modules.BorderUtil): a
+    /// 4 MB A5000 with a multisync monitor. Installs Doom+ and the Ultimate
+    /// Doom player, then double-clicks DoomU; the attract demo plays.
+    func testDoom() throws {
+        guard ProcessInfo.processInfo.environment["MACARCH_GAME_TESTS"] != nil else { throw XCTSkip("set MACARCH_GAME_TESTS=1") }
+        guard let rom = GameSmokeTests.romDir("riscos3_11") else { throw XCTSkip("RISC OS 3.11 ROM not present") }
+        let images = GameSmokeTests.root.appendingPathComponent("discimages")
+        guard let doom = FileManager.default.contents(atPath: images.appendingPathComponent("Doom Trilogy (Ultimate Doom, Doom II, Final Doom, Doom+ client) (1998) (RCI).zip").path),
+              let netUtils = FileManager.default.contents(atPath: images.appendingPathComponent("netutils.zip").path) else {
+            throw XCTSkip("Doom or !NetUtils archive not present")
+        }
+        let hd = NSTemporaryDirectory() + "macarch-doom-\(UUID().uuidString).hdf"
+        defer { try? FileManager.default.removeItem(atPath: hd) }
+        try ADFSHardDiscBuilder.create(path: hd, geometry: HardDiscGeometry.idePresets[1].geometry, name: "HardDisc4",
+                                       items: try ADFSHardDiscBuilder.items(fromZip: [UInt8](doom)) + ADFSHardDiscBuilder.items(fromZip: [UInt8](netUtils)))
+        var c = MachineConfiguration(model: .a5000)
+        c.romPaths = [rom]
+        c.ramKB = 4096
+        c.monitorType = .multisync
+        c.hardDiscs = [hd]
+        c.powerOnKeys = [0x34]
+        let m = try Machine(configuration: c)
+        m.powerOn()
+        let s = Script(m, name: "doom")
+        s.waitUntil("desktop", timeout: 40) { m.recentText.contains("Apps") }
+        s.wait(1)
+        s.press("f12")
+        s.type("Filer_Run ADFS::4.$.!NetUtils\n\n")
+        s.wait(3)
+        s.press("f12")
+        s.type("Filer_OpenDir ADFS::4.$\nFiler_Run ADFS::4.$.!DoomInst\n\n")
+        s.wait(10)
+        s.capture("1-installer")
+        s.pointTip(at: 410, 381); s.click()                      // Next: install into ADFS::4.$.Doom
+        s.wait(5)
+        for (x, y) in [(336, 252), (336, 285), (336, 317)] {     // untick Doom 2 and the extra levels
+            s.pointTip(at: x, y); s.click(); s.wait(0.5)
+        }
+        s.pointTip(at: 490, 381); s.click()                      // Next: install
+        s.wait(10)
+        // A message box per part ("About to install ..."; the last says the
+        // Ultimate Doom CD isn't there, which is fine: the IWADs are on the
+        // disc). Its OK button is filled, unlike the window behind it.
+        for _ in 0..<8 {
+            let f = m.currentFrame
+            let ok = f.pixels[325 * f.width + 317]
+            if ok == f.pixels[325 * f.width + 300] && ok != f.pixels[325 * f.width + 250] { s.pointTip(at: 317, 325); s.click() }
+            s.wait(10)
+        }
+        s.capture("2-installed")
+        // Once the Filer has seen !Doom+, double-clicking a WAD runs it.
+        s.press("f12")
+        s.type("Filer_OpenDir ADFS::4.$.Doom\n\n")
+        s.wait(5)
+        let desktop = m.currentFrame
+        s.press("f12")
+        s.type("Filer_Run ADFS::4.$.DoomU\n\n")
+        s.wait(70)
+        let a = m.currentFrame
+        s.wait(1)
+        s.capture("3-demo")
+        XCTAssertFalse(m.recentText.contains("not present"), "no missing System: path")
+        XCTAssertGreaterThan(changed(desktop, m.currentFrame), m.currentFrame.pixels.count / 2, "left the desktop for the game")
+        XCTAssertGreaterThan(changed(a, m.currentFrame), 1000, "the demo plays")
+        s.assertHealthy()
+    }
 }
