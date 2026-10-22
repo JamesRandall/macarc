@@ -18,20 +18,7 @@ struct MachineToolbar: CustomizableToolbarContent {
 
         ToolbarItem(id: "disc") {
             Menu {
-                Button("Open Disc…") { machine.openDisc() }
-                Menu("Open Recent") {
-                    ForEach(AppSettings.shared.recentDiscs, id: \.self) { path in
-                        Button((path as NSString).lastPathComponent) { machine.insertDisc(URL(fileURLWithPath: path)) }
-                    }
-                }
-                .disabled(AppSettings.shared.recentDiscs.isEmpty)
-                Divider()
-                Button("Save Disc Changes") { machine.saveDisc() }
-                    .disabled(!machine.disc.modified || !machine.disc.savable)
-                Button("Save Disc As…") { machine.saveDiscAs() }
-                    .disabled(machine.discName == nil || !machine.disc.savable)
-                Button("Eject Disc") { machine.ejectDisc() }
-                    .disabled(machine.discName == nil)
+                DiscItems(machine: machine)
             } label: {
                 Label("Disc", systemImage: "opticaldiscdrive")
             } primaryAction: {
@@ -187,5 +174,23 @@ struct MachineLights: View {
         }
         .accessibilityElement()
         .accessibilityLabel("\(label) light \(on ? "on" : "off")")
+    }
+}
+
+/// The disc button's menu. A view of its own, like HardDiscItems, so it
+/// follows the recent list and the disc's state.
+private struct DiscItems: View {
+    let machine: MachineController
+
+    var body: some View {
+        Button("Open Disc…") { machine.openDisc() }
+        RecentDiscsMenu(machine: machine)
+        Divider()
+        Button("Save Disc Changes") { machine.saveDisc() }
+            .disabled(!machine.disc.modified || !machine.disc.savable)
+        Button("Save Disc As…") { machine.saveDiscAs() }
+            .disabled(machine.discName == nil || !machine.disc.savable)
+        Button("Eject Disc") { machine.ejectDisc() }
+            .disabled(machine.discName == nil)
     }
 }

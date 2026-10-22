@@ -25,15 +25,7 @@ struct MacArchApp: App {
                 Button("Open Disc…") { machine?.openDisc() }
                     .keyboardShortcut("o")
                     .disabled(machine?.host == nil)
-                Menu("Open Recent") {
-                    ForEach(AppSettings.shared.recentDiscs, id: \.self) { path in
-                        Button((path as NSString).lastPathComponent) { machine?.insertDisc(URL(fileURLWithPath: path)) }
-                    }
-                    Divider()
-                    Button("Clear Menu") { AppSettings.shared.clearRecents() }
-                        .disabled(AppSettings.shared.recentDiscs.isEmpty)
-                }
-                .disabled(machine?.host == nil)
+                RecentDiscsMenu(machine: machine)
                 Divider()
                 Button("Save Disc Changes") { machine?.saveDisc() }
                     .keyboardShortcut("s", modifiers: [.command, .control])
@@ -229,6 +221,26 @@ struct HardDiscMenus: View {
         Menu("Hard Disc") { HardDiscItems(machine: machine) }
             .disabled((machine?.model.hardDiscSlots ?? 0) == 0 || machine?.host == nil)
             .help("The 400 series (ST506) and the A5000, A3020 and A4000 (IDE) take hard discs; changing a drive power cycles the machine")
+    }
+}
+
+/// Open Recent, for the File menu and the toolbar's disc button. A view of
+/// its own so it redraws when the list changes (toolbar content doesn't
+/// track what it reads).
+struct RecentDiscsMenu: View {
+    let machine: MachineController?
+
+    var body: some View {
+        let recents = AppSettings.shared.recentDiscs
+        Menu("Open Recent") {
+            ForEach(recents, id: \.self) { path in
+                Button((path as NSString).lastPathComponent) { machine?.insertDisc(URL(fileURLWithPath: path)) }
+            }
+            Divider()
+            Button("Clear Menu") { AppSettings.shared.clearRecents() }
+                .disabled(recents.isEmpty)
+        }
+        .disabled(machine?.host == nil)
     }
 }
 
