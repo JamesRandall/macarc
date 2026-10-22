@@ -15,9 +15,8 @@
 # the environment or in an env file: .env.local, or the file named by
 # MACARCH_ENV_FILE. No ROMs are included: users supply their own.
 #
-# Sparkle signs updates with an EdDSA key: SPARKLE_PRIVATE_KEY and
-# SPARKLE_PUBLIC_KEY (from the same file or the environment), or else the
-# login keychain's key for the account "macarch", made once with
+# The Sparkle signing key lives in the login keychain under the account
+# "macarch"; create it once with:
 #   .build/artifacts/sparkle/Sparkle/bin/generate_keys --account macarch
 # Keep a backup: losing it means existing installs can't verify updates.
 set -e
@@ -51,15 +50,12 @@ REPO=JamesRandall/macarc
 SPARKLE_BIN=.build/artifacts/sparkle/Sparkle/bin
 [ -x "$SPARKLE_BIN/generate_keys" ] || swift package resolve
 # Unnotarised builds don't need a key (without one they don't check for updates).
-if [ "$NOTARISE" = "0" ]; then
-    :
-elif [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+if [ "$NOTARISE" != "0" ]; then
     SPARKLE_PUBLIC_KEY=$("$SPARKLE_BIN/generate_keys" --account macarch -p) || {
-        echo "release: no Sparkle key; set SPARKLE_PRIVATE_KEY and SPARKLE_PUBLIC_KEY, or run $SPARKLE_BIN/generate_keys --account macarch" >&2
+        echo "release: no Sparkle key; run $SPARKLE_BIN/generate_keys --account macarch" >&2
         exit 1
     }
 fi
-[ "$NOTARISE" = "0" ] || [ -n "$SPARKLE_PUBLIC_KEY" ] || { echo "release: SPARKLE_PUBLIC_KEY isn't set" >&2; exit 1; }
 
 if [ -n "$(git status --porcelain)" ]; then
     echo "release: warning: the working tree has uncommitted changes" >&2
@@ -110,13 +106,8 @@ echo "Making the appcast..."
 # Start from the published feed so earlier releases stay listed.
 gh release download --repo "$REPO" --pattern appcast.xml --dir "$OUT/sparkle" 2>/dev/null || true
 cp "$ZIP" "$OUT/sparkle/"
-if [ -n "$SPARKLE_PRIVATE_KEY" ]; then
-    printf '%s' "$SPARKLE_PRIVATE_KEY" | "$SPARKLE_BIN/generate_appcast" --ed-key-file - \
-        --download-url-prefix "https://github.com/$REPO/releases/download/v$VERSION/" "$OUT/sparkle"
-else
-    "$SPARKLE_BIN/generate_appcast" --account macarch \
-        --download-url-prefix "https://github.com/$REPO/releases/download/v$VERSION/" "$OUT/sparkle"
-fi
+"$SPARKLE_BIN/generate_appcast" --account macarch \
+    --download-url-prefix "https://github.com/$REPO/releases/download/v$VERSION/" "$OUT/sparkle"
 cp "$OUT/sparkle/appcast.xml" "$OUT/appcast.xml"
 
 spctl --assess --type open --context context:primary-signature -v "$DMG"

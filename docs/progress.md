@@ -225,6 +225,6 @@
 
 - Sparkle 2 (SwiftPM), as in MacBeeb: `Updates` starts the standard updater only when the bundle has both `SUFeedURL` and `SUPublicEDKey` and isn't self-testing. MacArch ▸ Check for Updates… is disabled otherwise.
 - `tests/scripts/build-app.sh` embeds Sparkle.framework in Contents/Frameworks, adding the rpath `@executable_path/../Frameworks`. It signs Sparkle's helpers, then the framework, then the tools and the app, and writes `SUPublicEDKey` when SPARKLE_PUBLIC_KEY is set.
-- `scripts/release.sh` builds `appcast.xml` from the published feed plus the new zip, signed with SPARKLE_PRIVATE_KEY or the keychain account `macarch`. `--publish` tags and creates the GitHub release with the DMG, the zip and the appcast.
+- `scripts/release.sh` builds `appcast.xml` from the published feed plus the new zip, signed with the key in the login keychain under the account `macarch`. `--publish` tags and creates the GitHub release with the DMG, the zip and the appcast.
 - About MacArch links to github.com/JamesRandall/macarc and jamesdrandall.com.
 - Verified: the ad hoc bundle builds, passes `codesign --verify --deep --strict` and launches with the framework embedded. Not yet verified: a signed release, the appcast, and an update being installed.
