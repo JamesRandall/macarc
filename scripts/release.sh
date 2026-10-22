@@ -1,9 +1,11 @@
 #!/bin/sh
 # Builds a signed, notarised MacArch release in build/releases/VERSION:
 #   MacArch-VERSION.dmg   (stapled; drag MacArch to Applications)
-#   MacArch-VERSION.zip   (the stapled app)
+#   MacArch-VERSION.zip   (the stapled app, for Sparkle)
+#   appcast.xml           (the update feed, including earlier releases)
 #
 #   scripts/release.sh VERSION
+#   scripts/release.sh VERSION --publish   ...then tag and make a GitHub release
 #   NOTARISE=0 scripts/release.sh VERSION   no credentials: universal build and
 #                                           DMG, signed with SIGN_IDENTITY (default
 #                                           ad hoc), not notarised
@@ -12,11 +14,19 @@
 # (the Developer ID Application identity, with or without that prefix), in
 # the environment or in an env file: .env.local, or the file named by
 # MACARCH_ENV_FILE. No ROMs are included: users supply their own.
+#
+# Sparkle signs updates with an EdDSA key: SPARKLE_PRIVATE_KEY and
+# SPARKLE_PUBLIC_KEY (from the same file or the environment), or else the
+# login keychain's key for the account "macarch", made once with
+#   .build/artifacts/sparkle/Sparkle/bin/generate_keys --account macarch
+# Keep a backup: losing it means existing installs can't verify updates.
 set -e
 cd "$(dirname "$0")/.."
 
 VERSION=$1
-[ -n "$VERSION" ] || { echo "usage: scripts/release.sh VERSION" >&2; exit 2; }
+[ -n "$VERSION" ] || { echo "usage: scripts/release.sh VERSION [--publish]" >&2; exit 2; }
+PUBLISH=
+[ "$2" = "--publish" ] && PUBLISH=1
 
 ENV_FILE=${MACARCH_ENV_FILE:-.env.local}
 if [ -f "$ENV_FILE" ]; then
@@ -37,18 +47,33 @@ else
     esac
 fi
 
+REPO=JamesRandall/macarc
+SPARKLE_BIN=.build/artifacts/sparkle/Sparkle/bin
+[ -x "$SPARKLE_BIN/generate_keys" ] || swift package resolve
+# Unnotarised builds don't need a key (without one they don't check for updates).
+if [ "$NOTARISE" = "0" ]; then
+    :
+elif [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+    SPARKLE_PUBLIC_KEY=$("$SPARKLE_BIN/generate_keys" --account macarch -p) || {
+        echo "release: no Sparkle key; set SPARKLE_PRIVATE_KEY and SPARKLE_PUBLIC_KEY, or run $SPARKLE_BIN/generate_keys --account macarch" >&2
+        exit 1
+    }
+fi
+[ "$NOTARISE" = "0" ] || [ -n "$SPARKLE_PUBLIC_KEY" ] || { echo "release: SPARKLE_PUBLIC_KEY isn't set" >&2; exit 1; }
+
 if [ -n "$(git status --porcelain)" ]; then
     echo "release: warning: the working tree has uncommitted changes" >&2
+    [ -n "$PUBLISH" ] && { echo "release: commit them before publishing" >&2; exit 1; }
 fi
 
 BUILD_NUMBER=$(git rev-list --count HEAD)
-export UNIVERSAL=1 SIGN_IDENTITY="$IDENTITY" VERSION BUILD_NUMBER
+export UNIVERSAL=1 SIGN_IDENTITY="$IDENTITY" VERSION BUILD_NUMBER SPARKLE_PUBLIC_KEY
 tests/scripts/build-app.sh
 
 APP=build/MacArch.app
 OUT=build/releases/$VERSION
 rm -rf "$OUT"
-mkdir -p "$OUT"
+mkdir -p "$OUT/sparkle"
 
 notarise() {
     xcrun notarytool submit "$1" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" \
@@ -62,7 +87,8 @@ if [ "$NOTARISE" != "0" ]; then
     rm "$OUT/notarise.zip"
     xcrun stapler staple "$APP"
 fi
-ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/MacArch-$VERSION.zip"
+ZIP="$OUT/MacArch-$VERSION.zip"
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
 
 echo "Making the disk image..."
 STAGING="$OUT/dmg"
@@ -80,6 +106,27 @@ codesign --sign "$IDENTITY" --timestamp "$DMG"
 notarise "$DMG"
 xcrun stapler staple "$DMG"
 
+echo "Making the appcast..."
+# Start from the published feed so earlier releases stay listed.
+gh release download --repo "$REPO" --pattern appcast.xml --dir "$OUT/sparkle" 2>/dev/null || true
+cp "$ZIP" "$OUT/sparkle/"
+if [ -n "$SPARKLE_PRIVATE_KEY" ]; then
+    printf '%s' "$SPARKLE_PRIVATE_KEY" | "$SPARKLE_BIN/generate_appcast" --ed-key-file - \
+        --download-url-prefix "https://github.com/$REPO/releases/download/v$VERSION/" "$OUT/sparkle"
+else
+    "$SPARKLE_BIN/generate_appcast" --account macarch \
+        --download-url-prefix "https://github.com/$REPO/releases/download/v$VERSION/" "$OUT/sparkle"
+fi
+cp "$OUT/sparkle/appcast.xml" "$OUT/appcast.xml"
+
 spctl --assess --type open --context context:primary-signature -v "$DMG"
 spctl --assess --type execute -v "$APP"
 echo "Built $OUT"
+
+if [ -n "$PUBLISH" ]; then
+    git tag "v$VERSION"
+    git push origin "v$VERSION"
+    gh release create "v$VERSION" --repo "$REPO" --title "MacArch $VERSION" --generate-notes \
+        "$DMG" "$ZIP" "$OUT/appcast.xml"
+    echo "Published https://github.com/$REPO/releases/tag/v$VERSION"
+fi

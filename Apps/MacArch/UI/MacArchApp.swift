@@ -13,6 +13,13 @@ struct MacArchApp: App {
         }
         .defaultSize(width: 960, height: 760)
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About MacArch") { AboutPanel.show() }
+            }
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { Updates.shared.checkForUpdates() }
+                    .disabled(!Updates.shared.isAvailable)
+            }
             CommandGroup(after: .appSettings) { ROMsMenuItem() }
             CommandGroup(replacing: .newItem) {
                 Button("Open Disc…") { machine?.openDisc() }
@@ -295,6 +302,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Needed when run as a plain executable rather than an app bundle.
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        // Starts the background update checks.
+        _ = Updates.shared
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

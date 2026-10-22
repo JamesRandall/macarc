@@ -21,7 +21,7 @@ BIN=$(swift build -c release $ARCHS --show-bin-path)
 
 APP=build/MacArch.app
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BIN/MacArch" "$BIN/macarch-mcp" "$BIN/macarch-cli" "$APP/Contents/MacOS/"
 cp Apps/MacArch/Info.plist "$APP/Contents/Info.plist"
 # The icon: Icon Composer's AppIcon.icon (layers drawn by Tools/icon/draw.py),
@@ -30,6 +30,12 @@ xcrun actool Apps/MacArch/Resources/AppIcon.icon --compile "$APP/Contents/Resour
     --minimum-deployment-target 14.0 --app-icon AppIcon \
     --output-partial-info-plist build/AppIcon-partial.plist > /dev/null
 rm -f build/AppIcon-partial.plist
+# ditto keeps the framework's symlinks.
+ditto "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
+
+if [ -n "$SPARKLE_PUBLIC_KEY" ]; then
+    plutil -replace SUPublicEDKey -string "$SPARKLE_PUBLIC_KEY" "$APP/Contents/Info.plist"
+fi
 
 if [ -n "$VERSION" ]; then
     plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
@@ -40,6 +46,8 @@ fi
 
 IDENTITY="${SIGN_IDENTITY:--}"
 if [ "$IDENTITY" = "-" ]; then
+    # Ad hoc: no hardened runtime, whose library validation would reject
+    # the (also ad hoc, so "different team") Sparkle framework.
     OPTIONS="--timestamp=none"
 else
     OPTIONS="--options runtime --timestamp"
@@ -47,6 +55,14 @@ fi
 sign() {
     codesign --force $OPTIONS --sign "$IDENTITY" "$@"
 }
+# Sparkle's helpers first (as Sparkle's documentation describes), then the
+# framework, the tools and the app.
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+sign "$SPARKLE/XPCServices/Installer.xpc"
+sign --preserve-metadata=entitlements "$SPARKLE/XPCServices/Downloader.xpc"
+sign "$SPARKLE/Autoupdate"
+sign "$SPARKLE/Updater.app"
+sign "$APP/Contents/Frameworks/Sparkle.framework"
 sign "$APP/Contents/MacOS/macarch-mcp"
 sign "$APP/Contents/MacOS/macarch-cli"
 sign "$APP"

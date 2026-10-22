@@ -11,6 +11,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "Packages/ArchimedesCore"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
     ],
     targets: [
         .executableTarget(
@@ -35,9 +36,12 @@ let package = Package(
         ),
         .executableTarget(
             name: "MacArch",
-            dependencies: [.product(name: "ArchimedesCore", package: "ArchimedesCore"), "MacArchAgent"],
+            dependencies: [.product(name: "ArchimedesCore", package: "ArchimedesCore"), "MacArchAgent",
+                           .product(name: "Sparkle", package: "Sparkle")],
             path: "Apps/MacArch",
-            exclude: ["Info.plist", "Resources"]
+            exclude: ["Info.plist", "Resources"],
+            // Sparkle.framework is embedded in Contents/Frameworks.
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
     ]
 )

@@ -55,9 +55,12 @@ Opt-in automation hooks: `MACARCH_LOAD_STATE=file` resumes a state at launch; `M
 ```sh
 tests/scripts/build-app.sh                 # build/MacArch.app (ad hoc signed; includes macarch-mcp and macarch-cli)
 NOTARISE=0 scripts/release.sh 0.1.0        # universal DMG and zip in build/releases/0.1.0, not notarised
-scripts/release.sh 0.1.0                   # Developer ID signed, notarised and stapled
+scripts/release.sh 0.1.0                   # Developer ID signed, notarised and stapled, plus appcast.xml
+scripts/release.sh 0.1.0 --publish         # ...then tag v0.1.0 and make the GitHub release
 ```
 A notarised release needs APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID and CSC_NAME in the environment, in `.env.local` (git-ignored) or in the file named by `MACARCH_ENV_FILE`. The icon is an Icon Composer document whose layers are drawn by `Tools/icon/draw.py`. No ROMs are bundled.
+
+Updates come through Sparkle, as in MacBeeb: MacArch ▸ Check for Updates…, plus automatic checks, against `https://github.com/JamesRandall/macarc/releases/latest/download/appcast.xml`. The release script adds the public EdDSA key to the app and signs the zip in the appcast, keeping earlier releases listed. The key comes from SPARKLE_PRIVATE_KEY and SPARKLE_PUBLIC_KEY (in `.env.local` or the environment), or else the login keychain under the account `macarch` (`.build/artifacts/sparkle/Sparkle/bin/generate_keys --account macarch`). Keep a backup: losing it means existing installs can't verify new updates. Builds without the key, including local and unnotarised ones, don't check. The About box links to the repository and jamesdrandall.com.
 
 ## Tests and headless runs
 ```sh

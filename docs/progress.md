@@ -58,7 +58,7 @@
 - Verified with the self-test hook: the window, toolbar and lights render; CRT scanlines show; Actual Size sets the content to the frame's display size.
 - Not verified: menu enabling as seen by a focused window. A background launch can't become key, so the self-test sees the menus disabled. Interactive checks of recording, the rewind sheet and the settings window are still to do.
 - Recording verified by self-test: H.264 832x576 at 50 fps with AAC sound (the boot beep is audible, peak -14.9 dB). (Audio length later fixed: see below.)
-- Not carried over from MacBeeb: the debugger window, the DAP and agent-socket servers, the Mac-layout keyboard mode, and Sparkle updates.
+- Not carried over from MacBeeb: the debugger window, the DAP and agent-socket servers, and the Mac-layout keyboard mode. (Sparkle updates were added later: see below.)
 
 ## Phase 5 gate: four games scripted (2026-10-21)
 - Repton 3 launched by the user in the app. Headless recipe found: `DIR ADFS::0.$` then `!RISC_OS`.
@@ -220,3 +220,11 @@
 - App: `ROMLibrary` (scan in the background, install, replace an external entry with the copy, choose a default preferring the newest), a welcome screen (`WelcomeView`: hero, model/memory/monitor, drop zone with animated border, results, ROM cards with known-good/recognised badges and model suitability, Switch On), the ROMs window (MacArch ▸ ROMs…, Machine ▸ ROM ▸ Add ROMs…, Settings), and drops on a running window offered as ROMs when they aren't discs or states.
 - Tests: `ROMImporterTests` (chips in a scrambled order, halfword pairs, slices in and out of order, a zip of chips, rejections, install twice, the user's sets known). Self-test hook `MACARCH_SELFTEST_IMPORT="a|b"` adds ROMs as a drop does and writes a report.
 - Fixed: dragging files over the welcome screen pegged WindowServer at 100% (measured; MacArch itself was near idle). The drop zone's marching-ants border redrew the window 30 times a second while hovering, and the blurred material cards had to be re-blurred each time. The border is now static (it changes colour on hover) and the cards are plain translucent fills; hovering costs nothing measurable. `MACARCH_SELFTEST_HOVER=1` holds the drop zone in its hover state for measuring.
+
+## Sparkle updates and the About box (2026-10-22)
+
+- Sparkle 2 (SwiftPM), as in MacBeeb: `Updates` starts the standard updater only when the bundle has both `SUFeedURL` and `SUPublicEDKey` and isn't self-testing. MacArch ▸ Check for Updates… is disabled otherwise.
+- `tests/scripts/build-app.sh` embeds Sparkle.framework in Contents/Frameworks, adding the rpath `@executable_path/../Frameworks`. It signs Sparkle's helpers, then the framework, then the tools and the app, and writes `SUPublicEDKey` when SPARKLE_PUBLIC_KEY is set.
+- `scripts/release.sh` builds `appcast.xml` from the published feed plus the new zip, signed with SPARKLE_PRIVATE_KEY or the keychain account `macarch`. `--publish` tags and creates the GitHub release with the DMG, the zip and the appcast.
+- About MacArch links to github.com/JamesRandall/macarc and jamesdrandall.com.
+- Verified: the ad hoc bundle builds, passes `codesign --verify --deep --strict` and launches with the framework embedded. Not yet verified: a signed release, the appcast, and an update being installed.
