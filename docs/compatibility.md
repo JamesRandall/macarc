@@ -14,7 +14,7 @@ Desktop: RISC OS 3.11 and 2.00 both reach the desktop with the icon bar; the mou
 
 ## Scripted smoke tests
 
-`MACARCH_GAME_TESTS=1 swift test -c release --filter GameSmokeTests` (in `Packages/ArchimedesCore`, about 15 s) boots RISC OS 3.11 from a CMOS reset and drives each game to gameplay. It writes screenshots, frame checksums and an event log per game to `tests/reports/games/`. Checks:
+`MACARCH_GAME_TESTS=1 swift test -c release -Xswiftc -enable-testing --filter GameSmokeTests` (in `Packages/ArchimedesCore`, about 15 s) boots RISC OS 3.11 from a CMOS reset and drives each game to gameplay. It writes screenshots, frame checksums and an event log per game to `tests/reports/games/`. Checks:
 
 | Game | Checks |
 | --- | --- |
@@ -58,7 +58,7 @@ The scripted smoke tests also run on an A5000 (ARM3, 12 MHz memory, the 82C711's
 
 ## The wider collection (2026-10-21)
 
-RISC OS 3.11 on an A3000 (2 MB) unless noted. Started from the desktop: F12, `*Filer_Run ADFS::0.$.<app>`, then Return on an empty line (the same as double-clicking the application). Scripted in `CollectionSmokeTests` (`MACARCH_GAME_TESTS=1 swift test -c release --filter CollectionSmokeTests`).
+RISC OS 3.11 on an A3000 (2 MB) unless noted. Started from the desktop: F12, `*Filer_Run ADFS::0.$.<app>`, then Return on an empty line (the same as double-clicking the application). Scripted in `CollectionSmokeTests` (`MACARCH_GAME_TESTS=1 swift test -c release -Xswiftc -enable-testing --filter CollectionSmokeTests`).
 
 | Title | Image | Result | Notes |
 | --- | --- | --- | --- |
@@ -68,10 +68,26 @@ RISC OS 3.11 on an A3000 (2 MB) unless noted. Started from the desktop: F12, `*F
 | Superior Golf, Zelanites (PIAS 3, disc 1) | ADFS E | **yes**: golf menu, Zelanites title | |
 | Letrouve, Top Banana (PIAS 3, disc 2) | ADFS E | **yes**: titles | |
 | Paradroid 2000 | ADFS E | **yes**: title, Return, the deck | |
-| Pacmania | ADFS D, 5120 bytes short | **yes**: attract demo | The image lacks its last track; MacArch now reads such images, the missing sectors as zeroes. |
+| Pacmania | ADFS D, 5120 bytes short | **yes**: attract demo | The image lacks its last track; MacArch reads such images with that track unformatted (see Play It Again Sam 1 below). |
 | Speedball 2 | ADFS E, 5120 bytes short | **yes**: Bitmap Brothers intro | As Pacmania. |
 | Sim City (Krisalis) | ADFS E, 5120 bytes short | **yes**: New City dialog, map | Open the disc's directory first, so the Filer sees its `!System` (otherwise "System resources cannot be found"). The map's colours and the earthquake reported in the first month are not verified against a real machine. |
 | UIM | ADFS D | **yes**: title | |
 | UIM | HFE (HxC, MFM) | **yes**: title | All 800 sectors decode with good CRCs. The HFE is a different dump from the ADF: they differ in the free space map and in some file data. |
 | Magnetic Scrolls Collection (disc 1) | ADFS E | **yes on RISC OS 2.00; RISC OS 3.11 needs a 160K screen** | The loading sheet asks for "a 160k screensize". RISC OS 2 keeps the configured 160K; RISC OS 3.11's desktop gives the screen only what the mode needs (80K here), and the game draws past the end of its screen: "abort on data transfer at &2BF64" (a user-mode read of &2000000), then an address exception from its ticker after it exits. Grow the screen first (drag it in the Task Manager, or `SYS "OS_ChangeDynamicArea",2,&14000` from BASIC) and it runs, though its menu then sits lower on the screen. |
 | Sim City 2000 (A5000 version) | ZIP of `!SC2000` with RISC OS filetypes | **yes**: title, menu, GOODCITY loaded | Build a hard disc from the archive (Hard Disc ▸ New Hard Disc from Files…, or `macarch-cli hard-disc-create sc2k.hdf --ide --from …zip`). Needs an A5000 (or A4000) with 4 MB ("Application needs at least 3008K") and a multisync or VGA monitor: on a standard monitor it shows only the top half of its 640 x 512 picture. |
+
+## More of the collection (2026-10-22)
+
+RISC OS 3.11 on an A3000 (2 MB). Scripted in `CollectionSmokeTests`. Discs are swapped as a person would: out, a pause, then in, and only when the game asks.
+
+| Title | Image | Result | Notes |
+| --- | --- | --- | --- |
+| Apocalypse | 2 x ADFS E | **yes**: planet menu | Asks for the PLANETS disc after the title; Space twice after inserting it. |
+| Gods | 2 x ADFS E | **yes**: main menu, Top Ten | Space past the passwords notice and again after the intro; then "Please insert disc 2". Asks for disc 1 ('Gods1') if disc 2 goes in before it's asked for: the intro still loads from disc 1. |
+| Cannon Fodder | 3 x ADFS E | **yes**: the recruitment hill | Disc 2 after the intro. Disc 3 not reached. |
+| Play It Again Sam 1: Conqueror, Hostages | 2 x ADFS (D and E), both 5120 bytes short | **yes**: Conqueror's battlefield, Hostages' embassy briefing | Run by disc name (`ADFS::Sam1Boot.$.!Hostages`, as the Filer does), or `<Obey$Dir>` follows drive 0 to the data disc. Hostages' loader verifies track 79 side 1 with ADFS_DiscOp and expects it to fail: on the original disc it is unformatted (the reason these images are short). If the verify succeeds it corrupts itself and drops into BASIC. MacArch used to read the missing track as zeroes; now it is unformatted until written or formatted. |
+| Play It Again Sam 1: No Excuses, Rotor | ADFS D | **yes**: menu, title | |
+| Xenon 2 (1997 update, split onto two 800K discs) | 2 x ADFS E | **yes**: title and credits | Open the disc's directory first: the launcher (a module task) puts a sprite icon on the icon bar, and the sprite only exists once the Filer has seen `!Xenon2`. Click the icon; ADFS then asks for 'XenonData' and 'Xenon2' in turn. |
+| Stunt Racer 2000 | 2 x JFD | **yes**: the menu | Insert disc 2 only when "Please insert Disk Two" shows, then click. Swapping while it is still loading its sprites from disc 1 corrupts the system sprite area, and the menu dies with an address exception in OS_SpriteOp. |
+| Wolfenstein 3D (A3000) | 4 x ADFS E | **yes** (played by the user, RISC OS 2) | |
+| Doom Trilogy (R-Comp, 1998) | ZIP of `!DoomInst` and IWADs | **installs; doesn't start** | Build a hard disc from the ZIP (120 MB IDE) on a 4 MB A5000 with a multisync monitor. `!DoomInst` installs the Doom+ player, network drivers and extras (it then wants the Ultimate Doom CD, which isn't needed: the IWADs are on the disc). Doom+ needs `System:Modules.BorderUtil` on RISC OS 3.1 (window manager before 3.20), which comes from Acorn's `!System`; with no `!System` on the disc it stops with "Filing system or path System: not present". |

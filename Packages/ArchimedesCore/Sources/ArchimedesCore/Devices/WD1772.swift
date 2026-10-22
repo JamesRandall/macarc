@@ -558,7 +558,7 @@ public final class WD1772 {
                 pendingID = Int(s[i + 3])
                 i += 5
             } else if (s[i] == 0xFB || s[i] == 0xF8), let id = pendingID, i + size < s.count {
-                disc.writeSector(side: side, track: d.headTrack, sectorID: id, data: Array(s[(i + 1)...(i + size)]))
+                disc.formatSector(side: side, track: d.headTrack, sectorID: id, data: Array(s[(i + 1)...(i + size)]))
                 pendingID = nil
                 i += size + 1
             } else {

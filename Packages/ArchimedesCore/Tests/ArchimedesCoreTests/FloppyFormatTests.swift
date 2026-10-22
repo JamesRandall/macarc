@@ -95,7 +95,13 @@ final class FloppyFormatTests: XCTestCase {
         XCTAssertEqual(det.format, "ADF")
         XCTAssertTrue(det.notes.contains("5120 bytes short"), det.notes)
         let img = FloppyImage(data: adf, geometry: det.geometry!)
-        XCTAssertEqual(img.readSector(side: 1, track: 79, sectorID: 4), [UInt8](repeating: 0, count: 1024))
+        // The missing track was unformatted (protection on Play It Again Sam 1
+        // verifies that it is), until a format writes it.
+        XCTAssertTrue(img.layout(side: 1, track: 79).isEmpty)
+        XCTAssertNil(img.readSector(side: 1, track: 79, sectorID: 4))
+        XCTAssertEqual(img.layout(side: 0, track: 79).count, 5)
+        XCTAssertTrue(img.formatSector(side: 1, track: 79, sectorID: 4, data: [UInt8](repeating: 0xE5, count: 1024)))
+        XCTAssertEqual(img.readSector(side: 1, track: 79, sectorID: 4), [UInt8](repeating: 0xE5, count: 1024))
         // Without an ADFS directory, an odd size stays unknown.
         XCTAssertEqual(MediaDetector.detect([UInt8](repeating: 0, count: 819_200 - 5120)).format, "unknown")
     }

@@ -419,9 +419,7 @@ public final class FDC765 {
         c = id[0]; h = id[1]; r = id[2]; n = id[3]
         if let disc = drives[unit].disc, !disc.writeProtected {
             let track = drives[unit].headTrack
-            if let hd = disc.layout(side: head, track: track).first(where: { $0.id == id[2] }) {
-                _ = disc.writeData(hd, [UInt8](repeating: fillByte, count: hd.size))
-            }
+            disc.formatSector(side: head, track: track, sectorID: Int(id[2]), data: [UInt8](repeating: fillByte, count: 128 << Int(id[3] & 3)))
         }
         formatSectors -= 1
         if formatSectors <= 0 || terminalCount {

@@ -9,7 +9,7 @@ import XCTest
 ///
 /// They need the user's ROM and disc images (skipped when absent) and run
 /// 100+ s of guest time each, so they are opt-in:
-///     MACARCH_GAME_TESTS=1 swift test -c release --filter GameSmokeTests
+///     MACARCH_GAME_TESTS=1 swift test -c release -Xswiftc -enable-testing --filter GameSmokeTests
 final class GameSmokeTests: XCTestCase {
     static let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../..").standardized
     static let reports = root.appendingPathComponent("tests/reports/games")

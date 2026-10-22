@@ -238,3 +238,11 @@
   - A test appcast has `<description sparkle:format="markdown">` with the notes, signed with the `macarch` keychain key.
   - Self-test (`MACARCH_SELFTEST_WHATSNEW=0.0.9`) opens the window with 0.1.0 marked New. With 0.1.0 as the last version, it doesn't open.
   - The Help menu has the item.
+
+## More games; short images' last track (2026-10-22)
+
+- Short ADFS images (a track or more under 800K) now have the missing tracks unformatted: reads give "sector not found", and a format or write puts them back (`FloppyImage.formatSector`, used by both controllers' format commands). They were read as zeroes, which defeated Play It Again Sam 1's protection: Hostages verifies that the boot disc's last track is unformatted, and the zero-filled track passed, so it dropped into BASIC. Pacmania, Speedball 2 and Sim City (also short) still pass.
+- Found while testing, not emulator faults (see docs/compatibility.md): launching by `ADFS::0` instead of the disc name, swapping a disc before the game asks, and running Xenon 2's launcher before the Filer has seen its sprites.
+- New collection tests: Apocalypse, Gods, Cannon Fodder, Conqueror, Hostages, No Excuses and Rotor, Xenon 2, Stunt Racer 2000. All 15 collection tests pass.
+- Doom Trilogy installs from a hard disc built from its ZIP, but Doom+ needs Acorn's `!System` (BorderUtils) to start.
+- Release test builds need `-Xswiftc -enable-testing` with Xcode 27's SwiftPM (a clean build otherwise fails to resolve the ArchimedesCore module); the documented commands include it.

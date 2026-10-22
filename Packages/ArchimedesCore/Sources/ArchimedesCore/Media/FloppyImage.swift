@@ -115,6 +115,14 @@ public final class FloppyImage {
             guard let extra = addedSectors[i] else { return t[i] }
             return (t[i] + extra).sorted { $0.position < $1.position }
         }
+        // A short image stops before its last track(s): they were
+        // unformatted on the disc (some protection checks they still are),
+        // so they stay unformatted until written.
+        return rawLayout(side: side, track: track).filter { $0.dataOffset + $0.size <= base.count || overlay[$0.dataOffset] != nil }
+    }
+
+    /// A raw image's track as its geometry lays it out, present or not.
+    private func rawLayout(side: Int, track: Int) -> [SectorHeader] {
         let g = geometry
         guard side >= 0, side < g.sides, track >= 0, track < g.tracks else { return [] }
         return (0..<g.sectorsPerTrack).map { s in
@@ -133,7 +141,7 @@ public final class FloppyImage {
         let o = h.dataOffset, end = o + h.size
         if o < 0 { return [UInt8](repeating: 0, count: h.size) }
         if end <= base.count { return Array(base[o..<end]) }
-        // Short image: pad with zeroes.
+        // Short image (a sector only partly present): pad with zeroes.
         var out = [UInt8](repeating: 0, count: h.size)
         if o < base.count { for i in o..<base.count { out[i - o] = base[i] } }
         return out
@@ -155,6 +163,15 @@ public final class FloppyImage {
     @discardableResult
     public func writeSector(side: Int, track: Int, sectorID: Int, data: [UInt8]) -> Bool {
         guard let h = header(side: side, track: track, sectorID: sectorID) else { return false }
+        return writeData(h, data)
+    }
+
+    /// Writes a sector as a format command lays it down: on a raw image,
+    /// this also formats a track the image is short of.
+    @discardableResult
+    func formatSector(side: Int, track: Int, sectorID: Int, data: [UInt8]) -> Bool {
+        guard trackLayouts == nil else { return writeSector(side: side, track: track, sectorID: sectorID, data: data) }
+        guard let h = rawLayout(side: side, track: track).first(where: { Int($0.id) == sectorID }) else { return false }
         return writeData(h, data)
     }
 
@@ -249,14 +266,14 @@ public enum MediaDetector {
         let nick = d.count > 0x805 && Array(d[0x801...0x804]) == Array("Nick".utf8)
         // Some imagers stop before the last track or two of an 800K disc
         // (Krisalis titles turn up 5120 bytes short). Accept a truncated
-        // ADFS D/E image; the missing tracks read as zeroes.
+        // ADFS D/E image; the missing tracks are unformatted (see layout).
         let shortADFS = d.count < 819_200 && d.count >= 819_200 - 4 * 5120 && d.count % 1024 == 0 && (hugo || nick)
         switch d.count {
         case 819_200, _ where shortADFS:
             var notes = "ADFS D/E 800K raw sector image"
             if hugo { notes = "ADFS D (old map, 'Hugo' root directory)" }
             else if nick { notes = "ADFS E (new map, 'Nick' root directory)" }
-            if d.count < 819_200 { notes += String(format: "; image is %d bytes short (the last %d sectors read as zeroes)", 819_200 - d.count, (819_200 - d.count) / 1024) }
+            if d.count < 819_200 { notes += String(format: "; image is %d bytes short (the last %d sectors are unformatted)", 819_200 - d.count, (819_200 - d.count) / 1024) }
             return Result(format: "ADF", geometry: DiscGeometry(sides: 2, tracks: 80, sectorsPerTrack: 5, sectorSize: 1024, firstSectorID: 0, formatName: "ADFS D/E"), notes: notes)
         case 655_360:
             return Result(format: "ADL", geometry: DiscGeometry(sides: 2, tracks: 80, sectorsPerTrack: 16, sectorSize: 256, firstSectorID: 0, formatName: "ADFS L"), notes: "ADFS L 640K")

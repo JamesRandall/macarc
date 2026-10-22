@@ -64,11 +64,13 @@ A notarised release needs APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID a
 Updates come through Sparkle, as in MacBeeb: MacArch ▸ Check for Updates…, plus automatic checks, against `https://github.com/JamesRandall/macarc/releases/latest/download/appcast.xml`. The release script adds the public EdDSA key to the app and signs the zip in the appcast, keeping earlier releases listed. The key is in the login keychain under the account `macarch`; create it once with `.build/artifacts/sparkle/Sparkle/bin/generate_keys --account macarch`, and keep a backup (`-x FILE` exports it): losing it means existing installs can't verify new updates. Builds without the key, including local and unnotarised ones, don't check. The About box links to the repository and jamesdrandall.com.
 
 ## Tests and headless runs
+Release test builds need `-Xswiftc -enable-testing`: SwiftPM's newer build system (Xcode 27) leaves it out, and a clean build then fails with "unable to resolve Swift module dependency".
 ```sh
 (cd Packages/ArchimedesCore && swift test)        # no ROM needed; the ROM smoke test is skipped if roms/riscos3_11 is absent
-swift test -c release                             # the debug adapter (needs roms/riscos3_11 for the end-to-end test)
+swift test -c release -Xswiftc -enable-testing     # the debug adapter (needs roms/riscos3_11 for the end-to-end test)
 node Tools/vscode-macarch/test/smoke.js 3200 "$PWD/Examples/hello-arm/hello.s" 19   # against the running app
-(cd Packages/ArchimedesCore && MACARCH_GAME_TESTS=1 swift test -c release --filter GameSmokeTests)   # the four games; reports in tests/reports/games
+(cd Packages/ArchimedesCore && MACARCH_GAME_TESTS=1 swift test -c release -Xswiftc -enable-testing --filter GameSmokeTests)   # the four games; reports in tests/reports/games
+(cd Packages/ArchimedesCore && MACARCH_GAME_TESTS=1 swift test -c release -Xswiftc -enable-testing --filter CollectionSmokeTests)   # the wider collection
 swift build -c release
 .build/release/macarch-cli run --rom roms/riscos3_11 --cmos-reset --seconds 25 --screenshot out.png --diagnostics
 .build/release/macarch-cli disk-inspect discimages/adfs_Repton_3.adf
