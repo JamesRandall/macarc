@@ -1,0 +1,222 @@
+import AppKit
+import ArchimedesCore
+
+/// `MACARCH_SELFTEST=/path/out.png MacArch`: boots, then writes the menu bar
+/// structure (out.png.menus.txt), the window with its toolbar
+/// (out-window.png) and the display as drawn (out-display.png), and quits.
+/// For checking the app end to end without looking at it.
+@MainActor
+enum SelfTest {
+    static func runIfRequested(_ machine: MachineController) {
+        guard let path = ProcessInfo.processInfo.environment["MACARCH_SELFTEST"] else { return }
+        let wait = Double(ProcessInfo.processInfo.environment["MACARCH_SELFTEST_SECONDS"] ?? "") ?? 20
+        let launched = Date()
+        Task { @MainActor in
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.windows.first { $0.isVisible }?.makeKeyAndOrderFront(nil)
+            let env = ProcessInfo.processInfo.environment
+            if let style = env["MACARCH_SELFTEST_STYLE"].flatMap(DisplayStyle.init(rawValue:)) { machine.displayStyle = style }
+            // MACARCH_SELFTEST_IMPORT="a|b": add those as ROMs, as a drop on the welcome screen does.
+            if let paths = env["MACARCH_SELFTEST_IMPORT"] {
+                let added = await ROMLibrary.shared.add(paths.split(separator: "|").map { URL(fileURLWithPath: String($0)) })
+                let report = added.map { "\($0.found.rom.versionString) known=\($0.found.known != nil) from \($0.found.origin) -> \($0.path)" }
+                    + ROMLibrary.shared.rejected.map { "rejected \($0.name): \($0.reason)" }
+                try? report.joined(separator: "\n").write(toFile: path + ".import.txt", atomically: true, encoding: .utf8)
+            }
+            try? await Task.sleep(for: .seconds(wait))
+            if let z = env["MACARCH_SELFTEST_ZOOM"].flatMap(Double.init) {
+                machine.setZoom(z)
+                try? await Task.sleep(for: .seconds(1))
+            }
+            // MACARCH_SELFTEST_DEBUGGER=1: break on the IRQ vector, step, capture, continue.
+            if env["MACARCH_SELFTEST_DEBUGGER"] != nil {
+                let d = machine.debugger
+                d.addBreakpoint(.init(id: 0, kind: .execute, start: 0x18))
+                try? await Task.sleep(for: .seconds(1.5))
+                let stopped = machine.debugStop
+                let pcAtStop = d.snapshot.map { String(format: "&%X", $0.pc) } ?? "?"
+                d.removeAllBreakpoints()
+                for _ in 0..<3 { d.run(.stepInstruction); try? await Task.sleep(for: .seconds(0.3)) }
+                d.setProfiling(true)
+                try? await Task.sleep(for: .seconds(1))
+                var report = "stop=\(stopped ?? "none") pcAtStop=\(pcAtStop) pcAfterStep=\(d.snapshot.map { String(format: "&%X", $0.pc) } ?? "?") stopNow=\(machine.debugStop ?? "none")\n"
+                if let window = NSApp.windows.first(where: { $0.title.hasPrefix("Debugger") && $0.isVisible }),
+                   let frameView = window.contentView?.superview,
+                   let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) {
+                    frameView.cacheDisplay(in: frameView.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?
+                        .write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-debugger.png")))
+                    report += "debugger window open\n"
+                }
+                d.pauseOrContinue()
+                try? await Task.sleep(for: .seconds(1))
+                d.refresh()
+                try? await Task.sleep(for: .seconds(0.5))
+                report += "after continue: stop=\(machine.debugStop ?? "none") profile frames=\(d.snapshot?.profile?.frames ?? -1) routines=\(d.snapshot?.profile?.routines.count ?? 0) hardware sections=\(d.snapshot?.hardware.count ?? 0)\n"
+                try? report.write(toFile: path + ".debugger.txt", atomically: true, encoding: .utf8)
+            }
+            // MACARCH_SELFTEST_MACLAYOUT=1: Mac-layout typing through the view.
+            if env["MACARCH_SELFTEST_MACLAYOUT"] != nil,
+               let window = NSApp.windows.first(where: { $0.isVisible }),
+               let view = window.contentView?.firstSubview(of: EmulatorNSView.self) {
+                let settings = KeyboardSettings.shared
+                let saved = settings.mode
+                settings.mode = .macLayout
+                machine.keyDown(0x0C); try? await Task.sleep(for: .milliseconds(100)); machine.keyUp(0x0C)
+                try? await Task.sleep(for: .seconds(0.5))
+                @MainActor func shift(_ down: Bool) async {
+                    if let e = NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: down ? .shift : [], timestamp: 0,
+                                                windowNumber: window.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "",
+                                                isARepeat: false, keyCode: 56) { view.flagsChanged(with: e) }
+                    try? await Task.sleep(for: .milliseconds(80))
+                }
+                @MainActor func key(_ code: UInt16, _ ch: String, shifted: Bool) async {
+                    for type in [NSEvent.EventType.keyDown, .keyUp] {
+                        if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: shifted ? .shift : [], timestamp: 0,
+                                                    windowNumber: window.windowNumber, context: nil, characters: ch, charactersIgnoringModifiers: ch,
+                                                    isARepeat: false, keyCode: code) {
+                            if type == .keyDown { view.keyDown(with: e) } else { view.keyUp(with: e) }
+                        }
+                        try? await Task.sleep(for: .milliseconds(80))
+                    }
+                }
+                await shift(true); await key(19, "@", shifted: true); await shift(false)   // Shift kept
+                await shift(true); await key(29, "=", shifted: true); await shift(false)   // Shift lifted
+                await key(20, "#", shifted: false)                                         // Shift added
+                try? await Task.sleep(for: .seconds(1))
+                settings.mode = saved
+                let echo = machine.host?.sendAndWait { String($0.machine.recentText.suffix(20)) } ?? ""
+                try? "echo=\(echo.debugDescription)\n".write(toFile: path + ".keys.txt", atomically: true, encoding: .utf8)
+            }
+            // MACARCH_SELFTEST_SAVEDISC=copy.adf: *SAVE a file onto that disc, then Save Disc Changes.
+            if let discPath = env["MACARCH_SELFTEST_SAVEDISC"] {
+                machine.insertDisc(URL(fileURLWithPath: discPath))
+                machine.keyDown(0x0C); try? await Task.sleep(for: .milliseconds(100)); machine.keyUp(0x0C)
+                try? await Task.sleep(for: .seconds(0.5))
+                machine.type("*SAVE ADFS::0.$.SELFTEST 8000+100\n")
+                try? await Task.sleep(for: .seconds(8))
+                let before = machine.disc
+                let saved = machine.saveDisc()
+                try? "disc before save: \(before) saved=\(saved) after: modified=\(machine.disc.modified)\n"
+                    .write(toFile: path + ".disc.txt", atomically: true, encoding: .utf8)
+            }
+            // MACARCH_SELFTEST_RECORD=movie.mp4: record 3 s (with sound: a VDU 7 beep at the command line).
+            if let movie = env["MACARCH_SELFTEST_RECORD"] {
+                machine.startRecording(to: URL(fileURLWithPath: movie))
+                machine.keyDown(0x0C); try? await Task.sleep(for: .milliseconds(100)); machine.keyUp(0x0C)
+                try? await Task.sleep(for: .seconds(0.5))
+                machine.type("VDU7\n")
+                try? await Task.sleep(for: .seconds(3))
+                machine.toggleRecording()
+                try? await Task.sleep(for: .seconds(1))
+            }
+            // MACARCH_SELFTEST_HARDDISC=disc.hdf: become an ARM3 A440 (or the
+            // MACARCH_SELFTEST_MODEL) with that new, formatted disc and
+            // catalogue it. (Self-tests use their own settings and profiles.)
+            if let hdPath = env["MACARCH_SELFTEST_HARDDISC"] {
+                let model = env["MACARCH_SELFTEST_MODEL"].flatMap(MachineModel.init(rawValue:)) ?? .a440
+                try? FileManager.default.removeItem(atPath: hdPath)
+                let geometry = (model.hasIDE ? HardDiscGeometry.idePresets : HardDiscGeometry.presets)[0].geometry
+                try? ADFSFormatter.createFormattedImage(path: hdPath, geometry: geometry, name: "SelfTest")
+                machine.setHardware(model: model, cpu: model == .a440 ? .arm3 : model.defaultCPU, hardDiscs: [hdPath, nil])
+                try? await Task.sleep(for: .seconds(wait))
+                machine.keyDown(0x0C); try? await Task.sleep(for: .milliseconds(100)); machine.keyUp(0x0C)
+                try? await Task.sleep(for: .seconds(0.5))
+                machine.type("*Cat :4\n*Free :4\n")
+                try? await Task.sleep(for: .seconds(4))
+                let text = machine.host?.sendAndWait { String($0.machine.recentText.suffix(400)) } ?? ""
+                try? "title=\(machine.title)\nmodel=\(machine.model.rawValue) cpu=\(machine.cpu.rawValue) ram=\(machine.ramKB) discs=\(machine.hardDiscs)\n\(text)\n"
+                    .write(toFile: path + ".harddisc.txt", atomically: true, encoding: .utf8)
+            }
+            // MACARCH_SELFTEST_REWIND=seconds: rewind, pause, and report the history.
+            if let back = env["MACARCH_SELFTEST_REWIND"].flatMap(Double.init) {
+                let before = await machine.rewindPoints()
+                machine.rewind(seconds: back)
+                machine.setPaused(true)
+                try? await Task.sleep(for: .seconds(0.5))
+                let after = await machine.rewindPoints()
+                try? "points=\(before.points.count) now=\(before.now) -> points=\(after.points.count) now=\(after.now)\n"
+                    .write(toFile: path + ".rewind.txt", atomically: true, encoding: .utf8)
+            }
+            // MACARCH_SELFTEST_OPEN="Item,Item": choose menu items (e.g. the MCP
+            // windows), then capture every window to out-<n>.png.
+            if let items = env["MACARCH_SELFTEST_OPEN"] {
+                for title in items.split(separator: ",") {
+                    @MainActor func find(_ menu: NSMenu) -> NSMenuItem? {
+                        for i in menu.items {
+                            if i.title == title { return i }
+                            if let sub = i.submenu, let f = find(sub) { return f }
+                        }
+                        return nil
+                    }
+                    if let main = NSApp.mainMenu, let item = find(main), let action = item.action {
+                        NSApp.sendAction(action, to: item.target, from: item)
+                    }
+                    try? await Task.sleep(for: .seconds(1))
+                }
+                for (n, window) in NSApp.windows.filter({ $0.isVisible }).enumerated() {
+                    if let view = window.contentView?.superview, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                        view.cacheDisplay(in: view.bounds, to: rep)
+                        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-\(n).png")))
+                    }
+                }
+            }
+            var text = ""
+            @MainActor func walk(_ menu: NSMenu, _ depth: Int) {
+                // SwiftUI refreshes menu items as a menu opens.
+                menu.delegate?.menuNeedsUpdate?(menu)
+                menu.update()
+                for item in menu.items {
+                    let pad = String(repeating: "  ", count: depth)
+                    if item.isSeparatorItem { text += pad + "---\n"; continue }
+                    var key = ""
+                    if !item.keyEquivalent.isEmpty {
+                        let m = item.keyEquivalentModifierMask
+                        key = (m.contains(.control) ? "⌃" : "") + (m.contains(.option) ? "⌥" : "") +
+                            (m.contains(.shift) ? "⇧" : "") + (m.contains(.command) ? "⌘" : "") + item.keyEquivalent
+                    }
+                    text += pad + item.title + (key.isEmpty ? "" : "  [\(key)]") + (item.isEnabled ? "" : "  (disabled)") +
+                        (item.state == .on ? "  ✓" : "") + "\n"
+                    if let sub = item.submenu { walk(sub, depth + 1) }
+                }
+            }
+            if let main = NSApp.mainMenu { walk(main, 0) }
+            try? text.write(toFile: path + ".menus.txt", atomically: true, encoding: .utf8)
+            if let window = NSApp.windows.first(where: { $0.isVisible && $0.toolbar != nil }) ?? NSApp.windows.first,
+               let frameView = window.contentView?.superview,
+               let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) {
+                frameView.cacheDisplay(in: frameView.bounds, to: rep)
+                // Metal content is not in a cached display: draw the picture in.
+                if let view = window.contentView?.firstSubview(of: EmulatorNSView.self), let r = machine.renderer {
+                    let f = view.convert(view.bounds, to: frameView)
+                    let scale = CGFloat(rep.pixelsWide) / frameView.bounds.width
+                    if let img = r.renderImage(width: Int(f.width * scale), height: Int(f.height * scale)) {
+                        NSGraphicsContext.saveGraphicsState()
+                        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+                        NSImage(cgImage: img, size: f.size).draw(in: f)
+                        NSGraphicsContext.restoreGraphicsState()
+                    }
+                }
+                try? rep.representation(using: .png, properties: [:])?
+                    .write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-window.png")))
+                try? "title=\(window.title) subtitle=\(window.subtitle) size=\(window.frame.size) content=\(window.contentLayoutRect.size) zoom=\(machine.zoom.map { String($0) } ?? "none") active=\(NSApp.isActive) key=\(window.isKeyWindow) guest=\(String(format: "%.1f", machine.host?.guestSeconds ?? 0)) wall=\(String(format: "%.1f", Date().timeIntervalSince(launched)))\n"
+                    .write(toFile: path + ".txt", atomically: true, encoding: .utf8)
+            }
+            if let r = machine.renderer, let image = r.renderImage(width: Int(r.actualSize.width), height: Int(r.actualSize.height)),
+               let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
+                try? png.write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-display.png")))
+            }
+            NSApp.terminate(nil)
+        }
+    }
+}
+
+private extension NSView {
+    func firstSubview<T: NSView>(of type: T.Type) -> T? {
+        for v in subviews {
+            if let t = v as? T { return t }
+            if let t = v.firstSubview(of: type) { return t }
+        }
+        return nil
+    }
+}

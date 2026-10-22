@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "macarch": {
+      "command": ".build/release/macarch-mcp",
+      "args": [],
+      "env": { "MACARCH_ALLOWED_DIRS": "." }
+    },
+    "macarch-app": {
+      "command": ".build/release/macarch-mcp",
+      "args": ["--attach"]
+    }
+  }
+}

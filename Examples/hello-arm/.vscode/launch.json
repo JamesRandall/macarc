@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "macarch",
+      "request": "launch",
+      "name": "Assemble and run",
+      "source": "${workspaceFolder}/hello.s",
+      "stopOnEntry": true
+    },
+    {
+      "type": "macarch",
+      "request": "launch",
+      "name": "Assemble and run on an A5000",
+      "source": "${workspaceFolder}/hello.s",
+      "model": "A5000"
+    }
+  ]
+}

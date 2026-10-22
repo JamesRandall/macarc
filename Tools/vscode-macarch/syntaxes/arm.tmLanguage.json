@@ -1,0 +1,19 @@
+{
+  "scopeName": "source.arm.macarch",
+  "name": "ARM Assembly (MacArch)",
+  "patterns": [
+    { "name": "comment.line.arm", "match": "(;|\\\\|//).*$" },
+    { "name": "string.quoted.double.arm", "begin": "\"", "end": "\"", "patterns": [{ "name": "constant.character.escape.arm", "match": "\\\\." }] },
+    { "name": "constant.character.arm", "match": "'.'" },
+    { "name": "entity.name.function.label.arm", "match": "^\\s*\\.[A-Za-z_][A-Za-z0-9_]*" },
+    { "name": "entity.name.function.label.arm", "match": "^[A-Za-z_][A-Za-z0-9_]*:?" },
+    { "name": "keyword.control.directive.arm", "match": "(?i)\\b(ORG|ENTRY|ALIGN|EQU[BWDS]?|DC[BWDS]|SKIP|SPACE|LTORG|INCLUDE|GET|INCBIN|BIN|END|RN)\\b" },
+    { "name": "keyword.mnemonic.arm", "match": "(?i)\\b(ADRL?|AND|EOR|SUB|RSB|ADD|ADC|SBC|RSC|TST|TEQ|CMP|CMN|ORR|MOV|BIC|MVN|MUL|MLA|LDR|STR|LDM|STM|SWI|SVC|SWP|MRC|MCR|CDP|LDC|STC|NOP|BL?)(EQ|NE|CS|HS|CC|LO|MI|PL|VS|VC|HI|LS|GE|LT|GT|LE|AL|NV)?(S|P|B|T|BT|L|IA|IB|DA|DB|FD|ED|FA|EA)?(EQ|NE|CS|HS|CC|LO|MI|PL|VS|VC|HI|LS|GE|LT|GT|LE|AL|NV)?\\b" },
+    { "name": "variable.language.register.arm", "match": "(?i)\\b(R1[0-5]|R[0-9]|PC|LR|SP|SL|FP|IP|SB|A[1-4]|V[1-6]|C1[0-5]|C[0-9]|CR1[0-5]|CR[0-9]|P1[0-5]|P[0-9])\\b" },
+    { "name": "support.function.swi.arm", "match": "\\bX?(OS|Wimp)_[A-Za-z0-9]+\\b" },
+    { "name": "keyword.operator.shift.arm", "match": "(?i)\\b(LSL|ASL|LSR|ASR|ROR|RRX)\\b" },
+    { "name": "constant.numeric.hex.arm", "match": "(&|\\$|0x)[0-9A-Fa-f]+" },
+    { "name": "constant.numeric.binary.arm", "match": "%[01]+" },
+    { "name": "constant.numeric.decimal.arm", "match": "#?-?\\b[0-9]+\\b" }
+  ]
+}

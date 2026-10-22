@@ -1,0 +1,155 @@
+{
+  "name": "macarch-debug",
+  "displayName": "MacArch: Acorn Archimedes debugger",
+  "description": "Write ARM assembler and debug it on MacArch's emulated Acorn Archimedes: assemble and run with F5, breakpoints in the source, stepping (and stepping back), registers, memory, disassembly and watchpoints.",
+  "version": "0.1.0",
+  "publisher": "accidentalfish",
+  "license": "SEE LICENSE IN README.md",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Programming Languages"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onDebugResolve:macarch",
+    "onDebugDynamicConfigurations:macarch",
+    "onLanguage:arm-macarch"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "arm-macarch",
+        "aliases": [
+          "ARM Assembly (MacArch)",
+          "arm-macarch"
+        ],
+        "extensions": [
+          ".s",
+          ".arm"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "arm-macarch",
+        "scopeName": "source.arm.macarch",
+        "path": "./syntaxes/arm.tmLanguage.json"
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "arm-macarch"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "macarch",
+        "label": "MacArch (Acorn Archimedes)",
+        "languages": [
+          "arm-macarch"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "An ARM assembler source file: assembled by MacArch, loaded at its ORG (default &8000) from the * prompt (F12 from the desktop), its labels and source lines loaded, and started with *Go."
+              },
+              "program": {
+                "type": "string",
+                "description": "Or an assembled binary, loaded and started the same way."
+              },
+              "loadAddress": {
+                "type": "number",
+                "description": "With program: where to load it (default 0x8000)."
+              },
+              "execAddress": {
+                "type": "number",
+                "description": "With program: where to start it (default loadAddress)."
+              },
+              "symbols": {
+                "type": "string",
+                "description": "A label file (name = &8000, name EQU &8000, nm output) for names."
+              },
+              "model": {
+                "type": "string",
+                "enum": ["A305", "A310", "A3000", "A410/1", "A420/1", "A440/1", "A540", "A5000", "A3010", "A3020", "A4000"],
+                "description": "Switch the machine to this model first (it's power cycled)."
+              },
+              "disc": {
+                "type": "string",
+                "description": "A floppy disc image (.adf) to put in drive 0."
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Stop at the program's first instruction."
+              },
+              "port": {
+                "type": "number",
+                "description": "MacArch's debug adapter port (Settings > Debugging; default 3200)."
+              }
+            }
+          },
+          "attach": {
+            "properties": {
+              "symbols": {
+                "type": "string",
+                "description": "A label file for names."
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Stop the machine as soon as it's attached."
+              },
+              "port": {
+                "type": "number",
+                "description": "MacArch's debug adapter port (default 3200)."
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "macarch",
+            "request": "launch",
+            "name": "Assemble and run",
+            "source": "${file}",
+            "stopOnEntry": false
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "MacArch: Assemble and run an ARM source",
+            "body": {
+              "type": "macarch",
+              "request": "launch",
+              "name": "Assemble and run",
+              "source": "^\"\\${workspaceFolder}/${1:main.s}\""
+            }
+          },
+          {
+            "label": "MacArch: Run a binary",
+            "body": {
+              "type": "macarch",
+              "request": "launch",
+              "name": "Run on the Archimedes",
+              "program": "^\"\\${workspaceFolder}/${1:program.bin}\"",
+              "loadAddress": 32768
+            }
+          },
+          {
+            "label": "MacArch: Attach to the running machine",
+            "body": {
+              "type": "macarch",
+              "request": "attach",
+              "name": "Attach to MacArch"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+.build/
+.swiftpm/
+*.xcodeproj/xcuserdata/
+DerivedData/
+build/
+# Local, copyrighted inputs: never commit
+discimages/
+roms/
+references/
+tests/reports/
+*.rom
+.DS_Store
+.env.local
+*.vsix
+node_modules/
+Examples/**/*.bin
+# Disc, ROM and machine images anywhere in the tree: never commit
+*.adf
+*.adl
+*.adm
+*.ads
+*.jfd
+*.hfe
+*.hdf
+*.macarchstate
+*.zip

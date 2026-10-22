@@ -1,0 +1,798 @@
+import AppKit
+import ArchimedesCore
+import Observation
+import UniformTypeIdentifiers
+
+/// One emulated Archimedes and its window's actions.
+@MainActor
+@Observable
+final class MachineController {
+    /// Runs the machine; nil until a ROM is chosen.
+    private(set) var host: EmulatorHost?
+    @ObservationIgnored private let audio = AudioOutput()
+    @ObservationIgnored private lazy var tee = AudioTee(output: audio)
+
+    private(set) var paused = false
+    private(set) var speedLimited = true
+    var muted = false { didSet { audio.muted = muted } }
+    /// The ROM's version, e.g. "RISC OS 3.11 (29 Sep 1992)".
+    private(set) var romVersion = ""
+    private(set) var romPath: String?
+    private(set) var model = AppSettings.shared.model
+    private(set) var cpu = AppSettings.shared.cpu(for: AppSettings.shared.model)
+    private(set) var ramKB = AppSettings.shared.ramKB(for: AppSettings.shared.model)
+    private(set) var monitor = AppSettings.shared.monitor(for: AppSettings.shared.model)
+    /// Hard disc image paths by drive (400 series).
+    private(set) var hardDiscs = AppSettings.shared.hardDiscs(for: AppSettings.shared.model)
+    private(set) var discName: String?
+    /// Whether drive 0's disc has unsaved changes, and whether they can be saved.
+    private(set) var disc = EmulatorHost.DiscState()
+    private(set) var lights = Machine.Lights()
+    /// Why the machine could not start, for the setup view.
+    private(set) var startError: String?
+
+    /// How the window draws the picture. Shared by all windows.
+    var displayStyle = DisplayStyle.saved {
+        didSet { AppSettings.store.set(displayStyle.rawValue, forKey: DisplayStyle.defaultsKey) }
+    }
+    @ObservationIgnored weak var renderer: Renderer?
+    @ObservationIgnored private var lightsTimer: Timer?
+    /// Keeps App Nap from throttling the emulation in the background.
+    @ObservationIgnored private var activity: NSObjectProtocol?
+
+    /// Open windows' machines, for the quit check.
+    static let live = NSHashTable<MachineController>.weakObjects()
+    /// Identifies this machine to its debugger window.
+    let id = UUID()
+    static var all: [UUID: MachineController] = [:]
+    /// The debugger's view of this machine.
+    @ObservationIgnored private(set) lazy var debugger = DebuggerModel(machine: self)
+    /// Set when the debugger stops the machine, so its window opens.
+    var debuggerRequested = false
+    /// Why the debugger has stopped the machine, if it has.
+    private(set) var debugStop: String?
+    @ObservationIgnored private var debugStopCount = 0
+    /// An AI agent is holding the machine still between its tool calls.
+    private(set) var heldForAgent = false
+    /// This window's machine is the one agents attach to.
+    var servesAgents = false
+    /// While the debugger is open, the screen address under the mouse.
+    var inspecting = false { didSet { if !inspecting { inspection = nil } } }
+    private(set) var inspection: String?
+
+    init() {
+        Self.live.add(self)
+        Self.all[id] = self
+        if let path = AppSettings.shared.romPath { start(romPath: path) }
+        SelfTest.runIfRequested(self)
+    }
+
+    // MARK: Machine
+
+    /// Everything that needs a new machine (a power cycle) to change.
+    struct Hardware: Equatable {
+        var model: MachineModel
+        var cpu: CPUType
+        var ramKB: Int
+        var monitor: MonitorType
+        var romPath: String
+        var hardDiscs: [String?]
+    }
+
+    private func configuration(_ hw: Hardware, cmos: String) -> MachineConfiguration {
+        var c = MachineConfiguration(model: hw.model)
+        c.cpu = hw.cpu
+        c.ramKB = hw.ramKB
+        c.monitorType = hw.monitor
+        c.romPaths = [hw.romPath]
+        c.hardDiscs = hw.hardDiscs
+        if FileManager.default.fileExists(atPath: cmos) {
+            c.cmosPath = cmos
+        } else {
+            c.powerOnKeys = [0x34] // first boot: Delete held resets CMOS to defaults
+        }
+        return c
+    }
+
+    /// Builds a machine for `hw`. Hard discs whose files have gone are
+    /// left out (and reported), rather than stopping the machine starting.
+    private func makeMachine(_ hw: Hardware) throws -> (Machine, String, Hardware) {
+        var hw = hw
+        let missing = hw.hardDiscs.compactMap { $0 }.filter { !FileManager.default.fileExists(atPath: $0) }
+        if !missing.isEmpty {
+            hw.hardDiscs = hw.hardDiscs.map { p in p.flatMap { missing.contains($0) ? nil : $0 } }
+            alert("A hard disc image is missing", "The machine starts without " + missing.map { ($0 as NSString).lastPathComponent }.joined(separator: ", ") + ". Use Hard Disc > Open to fit it again.")
+        }
+        let rom = try ROMImage.load(paths: [hw.romPath])
+        let cmos = AppSettings.cmosPath(for: rom, model: hw.model)
+        return (try Machine(configuration: configuration(hw, cmos: cmos), rom: rom), cmos, hw)
+    }
+
+    private var hardware: Hardware? {
+        romPath.map { Hardware(model: model, cpu: cpu, ramKB: ramKB, monitor: monitor, romPath: $0, hardDiscs: hardDiscs) }
+    }
+
+    private func adopt(_ hw: Hardware) {
+        model = hw.model; cpu = hw.cpu; ramKB = hw.ramKB; monitor = hw.monitor; romPath = hw.romPath; hardDiscs = hw.hardDiscs
+        let s = AppSettings.shared
+        s.model = hw.model; s.romPath = hw.romPath
+        s.setCPU(hw.cpu, for: hw.model); s.setRAMKB(hw.ramKB, for: hw.model); s.setHardDiscs(hw.hardDiscs, for: hw.model)
+        s.setMonitor(hw.monitor, for: hw.model)
+    }
+
+    /// Starts the first machine (or restarts after a failed start).
+    func start(romPath path: String) {
+        do {
+            let (m, cmos, hw) = try makeMachine(Hardware(model: model, cpu: cpu, ramKB: ramKB, monitor: monitor, romPath: path, hardDiscs: hardDiscs))
+            let h = EmulatorHost(machine: m, profile: .init(cmosPath: cmos), audioSink: tee)
+            host = h
+            adopt(hw)
+            romVersion = m.rom.versionString
+            startError = nil
+            audio.start()
+            h.start()
+            h.agentRecording = agentRecordingHooks(host: h)
+            AppAgentContext.startServer(for: h, controller: self)
+            activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical],
+                                                             reason: "Emulating an Acorn Archimedes")
+            lightsTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 15, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.poll() }
+            }
+            if let p = ProcessInfo.processInfo.environment["MACARCH_LOAD_STATE"] { loadState(URL(fileURLWithPath: p)) }
+        } catch {
+            startError = "\(error)"
+        }
+    }
+
+    func shutdown() {
+        if recorder != nil { toggleRecording() }
+        host?.stop()
+        audio.stop()
+        lightsTimer?.invalidate()
+        if let activity { ProcessInfo.processInfo.endActivity(activity) }
+    }
+
+    private func poll() {
+        guard let host else { return }
+        let l = host.lights
+        if l != lights { lights = l }
+        let d = host.disc
+        if d != disc { disc = d }
+        // The agent (or a loaded state) can change the disc behind the menus.
+        if d.name != discName { discName = d.name }
+        // A breakpoint pauses the machine on the emulation thread.
+        // A new stop (a breakpoint, a step, an agent) brings the debugger forward.
+        let stop = host.debugStop, count = host.debugStopCount
+        if stop != debugStop || count != debugStopCount {
+            debugStop = stop
+            if stop != nil && count != debugStopCount { debuggerRequested = true; debugger.refresh() }
+            debugStopCount = count
+        }
+        let held = host.heldForAgent
+        if held != heldForAgent { heldForAgent = held }
+        if host.paused != paused { paused = host.paused }
+    }
+
+    /// Changes the model, processor, memory, ROM or hard discs: a new
+    /// machine, power cycled, with the floppy kept. A new model brings back
+    /// the processor, memory and hard discs it last had.
+    func setHardware(model newModel: MachineModel? = nil, cpu newCPU: CPUType? = nil, ramKB newRAM: Int? = nil,
+                     monitor newMonitor: MonitorType? = nil, romPath newROM: String? = nil, hardDiscs newDiscs: [String?]? = nil) {
+        var hw = Hardware(model: model, cpu: cpu, ramKB: ramKB, monitor: monitor, romPath: romPath ?? "", hardDiscs: hardDiscs)
+        if let newModel, newModel != hw.model {
+            let s = AppSettings.shared
+            hw = Hardware(model: newModel, cpu: s.cpu(for: newModel), ramKB: s.ramKB(for: newModel), monitor: s.monitor(for: newModel),
+                          romPath: hw.romPath, hardDiscs: s.hardDiscs(for: newModel))
+        }
+        if let newCPU { hw.cpu = newCPU }
+        if let newMonitor { hw.monitor = newMonitor }
+        if let newRAM { hw.ramKB = newRAM }
+        if let newROM { hw.romPath = newROM }
+        if let newDiscs { hw.hardDiscs = newDiscs }
+        guard hw != hardware || host == nil else { return }
+        guard let host else {
+            // No machine yet: remember the choice, and start if there is a ROM.
+            if hw.romPath.isEmpty { model = hw.model; cpu = hw.cpu; ramKB = hw.ramKB; monitor = hw.monitor; hardDiscs = hw.hardDiscs } else { adopt(hw); start(romPath: hw.romPath) }
+            return
+        }
+        if hw.hardDiscs != hardDiscs || hw.model != model { syncHardDiscs() }
+        do {
+            let (m, cmos, fitted) = try makeMachine(hw)
+            stopRecordingIfNeeded()
+            adopt(fitted)
+            romVersion = m.rom.versionString
+            host.send { s in
+                if let disc = s.machine.fdc.drives[0].disc { m.insertFloppy(disc) }
+                s.host.changeProfile(.init(cmosPath: cmos))
+                s.replace(with: m)
+                m.powerOn()
+                s.host.setPersistCMOS(true, session: s)
+            }
+        } catch {
+            alert("Could not set up the \(hw.model.displayName)", "\(error)")
+        }
+    }
+
+    func powerCycle() {
+        stopRecordingIfNeeded()
+        host?.send { s in
+            s.host.restoreProfileCMOS(into: s.machine)
+            s.machine.powerOn()
+            s.rewinder.reset()
+        }
+    }
+
+    /// The reset button: restarts the OS, keeping memory, CMOS and the disc.
+    func reset() { host?.send { $0.machine.reset() } }
+
+    func togglePause() {
+        // Resume lets go of an agent's hold first.
+        if heldForAgent && !paused { host?.heldForAgent = false; heldForAgent = false; return }
+        paused.toggle()
+        host?.paused = paused
+    }
+
+    func setPaused(_ value: Bool) {
+        paused = value
+        host?.paused = value
+    }
+
+    func toggleSpeedLimit() {
+        speedLimited.toggle()
+        host?.speedLimited = speedLimited
+    }
+
+    // MARK: Input
+
+    func keyDown(_ code: UInt8) { host?.send { $0.machine.keyDown(code) } }
+    func keyUp(_ code: UInt8) { host?.send { $0.machine.keyUp(code) } }
+    func mouseMove(dx: Int, dy: Int) { host?.send { $0.machine.mouseMove(dx: dx, dy: dy) } }
+    func releaseAllKeys() { host?.send { $0.machine.keyboard.releaseAll(); $0.machine.ioc.pumpKeyboard() } }
+
+    /// Types the clipboard's text into the machine.
+    func pasteText() {
+        guard let text = NSPasteboard.general.string(forType: .string) else { return }
+        type(text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n"))
+    }
+
+    /// Types text into the machine as key presses.
+    func type(_ text: String) {
+        host?.send { $0.machine.scheduleTyping(text, intervalMs: 40) }
+    }
+
+    func toggleMouseCapture() {
+        NotificationCenter.default.post(name: EmulatorNSView.toggleMouseCapture, object: self)
+    }
+
+    // MARK: Discs
+
+    static let discTypes: [UTType] = ["adf", "adl", "jfd", "hfe"].compactMap { UTType(filenameExtension: $0) }
+
+    func openDisc() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = Self.discTypes
+        panel.allowsOtherFileTypes = true
+        panel.message = "Choose an Archimedes floppy image (ADFS .adf, or JFD .jfd or HxC .hfe for protected originals)"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        insertDisc(url)
+    }
+
+    /// Puts the image in drive 0. Writes stay in memory; the file is never changed.
+    func insertDisc(_ url: URL) {
+        guard confirmDiscChanges(before: "inserting another disc") else { return }
+        do {
+            let img = try FloppyImage.open(path: url.path)
+            host?.send { $0.machine.insertFloppy(img) }
+            discName = url.lastPathComponent
+            AppSettings.shared.addRecent(url.path)
+            NSDocumentController.shared.noteNewRecentDocumentURL(url)
+        } catch {
+            alert("Could not open \(url.lastPathComponent)", "\(error)")
+        }
+    }
+
+    func ejectDisc() {
+        guard confirmDiscChanges(before: "ejecting it") else { return }
+        host?.send { $0.machine.ejectFloppy() }
+        discName = nil
+    }
+
+    /// Writes drive 0's changes back to its image file (or to `url`).
+    @discardableResult
+    func saveDisc(to url: URL? = nil) -> Bool {
+        guard let host else { return false }
+        let error: Error? = host.sendAndWait { s in
+            guard let image = s.machine.fdc.drives[0].disc else { return nil }
+            do {
+                try image.saveChanges(to: url?.path)
+                // History points refer to the disc as it was; start afresh.
+                s.rewinder.reset()
+                return nil
+            } catch { return error }
+        }
+        if let error {
+            alert("Could not save the disc", "\(error)")
+            return false
+        }
+        if let url {
+            discName = url.lastPathComponent
+            AppSettings.shared.addRecent(url.path)
+            NSDocumentController.shared.noteNewRecentDocumentURL(url)
+        }
+        disc.modified = false
+        return true
+    }
+
+    func saveDiscAs() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: "adf") ?? .data]
+        panel.nameFieldStringValue = discName.map { ($0 as NSString).deletingPathExtension + " copy.adf" } ?? "Disc.adf"
+        panel.message = "Save the disc, with its changes, as a new ADF image. The machine then uses the new file."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        saveDisc(to: url)
+    }
+
+    /// Before the disc's changes would be lost: offers to save them. Returns
+    /// false if the user cancels.
+    func confirmDiscChanges(before action: String) -> Bool {
+        guard let host, host.disc.modified, let name = discName else { return true }
+        let a = NSAlert()
+        a.messageText = "Save the changes to \(name) before \(action)?"
+        if host.disc.savable {
+            a.informativeText = "The changes are only in memory; the image file has not been changed."
+            a.addButton(withTitle: "Save")
+            a.addButton(withTitle: "Don't Save")
+            a.addButton(withTitle: "Cancel")
+            switch a.runModal() {
+            case .alertFirstButtonReturn: return saveDisc()
+            case .alertSecondButtonReturn: return true
+            default: return false
+            }
+        } else {
+            a.informativeText = "JFD and HFE images are kept read-only, so these changes cannot be written back. Save the machine's state to keep them."
+            a.addButton(withTitle: "Discard Changes")
+            a.addButton(withTitle: "Cancel")
+            return a.runModal() == .alertFirstButtonReturn
+        }
+    }
+
+    /// Opens whatever was dropped on the window or opened from Finder.
+    func open(_ url: URL) -> Bool {
+        switch url.pathExtension.lowercased() {
+        case Self.stateExtension: loadState(url)
+        default:
+            // Before a machine is running, anything dropped is offered as ROMs.
+            if host == nil { Task { await ROMLibrary.shared.add([url]) }; return true }
+            var isDir: ObjCBool = false
+            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+            if !isDir.boolValue, let d = FileManager.default.contents(atPath: url.path), MediaDetector.detect([UInt8](d)).format != "unknown" {
+                insertDisc(url)
+                return true
+            }
+            // Not a disc: perhaps ROMs (a ROM image, chips, a folder or a ZIP).
+            Task {
+                let added = await ROMLibrary.shared.add([url])
+                if added.isEmpty {
+                    alert("MacArch can't open \(url.lastPathComponent)", "It isn't a floppy disc image, a saved state or a RISC OS ROM.")
+                } else {
+                    let names = added.map(\.found.rom.versionString).joined(separator: ", ")
+                    alert("Added to your ROMs", "\(names). Choose it from Machine ▸ ROM to use it in this window.")
+                }
+            }
+        }
+        return true
+    }
+
+    // MARK: Hard discs
+
+    static let hardDiscType = UTType(filenameExtension: "hdf") ?? .data
+
+    /// Pushes written sectors to the image files (before they are reopened).
+    func syncHardDiscs() {
+        host?.sendAndWait { s in s.machine.hdc?.drives.forEach { $0?.synchronize() } }
+    }
+
+    func hardDiscName(_ drive: Int) -> String? {
+        hardDiscs.indices.contains(drive) ? hardDiscs[drive].map { ($0 as NSString).lastPathComponent } : nil
+    }
+
+    /// Another window's machine using `path` would corrupt it.
+    private func inUseElsewhere(_ path: String) -> Bool {
+        Self.live.allObjects.contains { $0 !== self && $0.hardDiscs.contains(path) }
+    }
+
+    private func fitHardDisc(_ path: String?, drive: Int) {
+        var discs = hardDiscs
+        while discs.count < model.hardDiscSlots { discs.append(nil) }
+        guard discs.indices.contains(drive) else { return }
+        discs[drive] = path
+        setHardware(hardDiscs: discs)
+    }
+
+    /// Fits an existing image (power cycles).
+    func openHardDisc(drive: Int) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [Self.hardDiscType]
+        panel.allowsOtherFileTypes = true
+        let kind = model.hasIDE ? "an IDE hard disc image (.hdf, raw 512-byte sectors)" : "an ST506 hard disc image (.hdf, raw 256-byte sectors)"
+        panel.message = "Choose \(kind) for drive \(drive + 4). The machine will be power cycled."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard !inUseElsewhere(url.path) else {
+            alert("\(url.lastPathComponent) is in use", "Another window's machine has this hard disc fitted. Remove it there first.")
+            return
+        }
+        do { _ = try HardDiscImage.open(path: url.path, sectorSize: model.hardDiscSectorSize) } catch {
+            alert("Could not use \(url.lastPathComponent)", "\(error)")
+            return
+        }
+        fitHardDisc(url.path, drive: drive)
+    }
+
+    /// Asks where to save a new image and how big a drive it is (the
+    /// smallest that holds `minimumBytes` is chosen to begin with).
+    private func chooseNewHardDisc(drive: Int, message: String, minimumBytes: Int = 0) -> (URL, HardDiscGeometry)? {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [Self.hardDiscType]
+        panel.nameFieldStringValue = "Hard Disc \(drive + 4).hdf"
+        try? FileManager.default.createDirectory(atPath: AppSettings.hardDiscDirectory, withIntermediateDirectories: true)
+        panel.directoryURL = URL(fileURLWithPath: AppSettings.hardDiscDirectory)
+        panel.message = message
+        let sizes = NSPopUpButton(frame: .zero, pullsDown: false)
+        let presets = model.hasIDE ? HardDiscGeometry.idePresets : HardDiscGeometry.presets
+        sizes.addItems(withTitles: presets.map(\.name))
+        sizes.selectItem(at: presets.firstIndex { $0.geometry.byteCount >= minimumBytes } ?? presets.count - 1)
+        let label = NSTextField(labelWithString: "Drive:")
+        let accessory = NSStackView(views: [label, sizes])
+        accessory.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+        panel.accessoryView = accessory
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        return (url, presets[max(0, sizes.indexOfSelectedItem)].geometry)
+    }
+
+    /// Creates a formatted image of a chosen size and fits it (power cycles).
+    func newHardDisc(drive: Int) {
+        guard let (url, geometry) = chooseNewHardDisc(drive: drive, message: "A new hard disc, formatted and empty, for drive \(drive + 4). The machine will be power cycled.") else { return }
+        do {
+            try ADFSFormatter.createFormattedImage(path: url.path, geometry: geometry, name: (url.lastPathComponent as NSString).deletingPathExtension)
+        } catch {
+            alert("Could not create the hard disc", "\(error)")
+            return
+        }
+        fitHardDisc(url.path, drive: drive)
+    }
+
+    /// Creates a hard disc holding the files from a ZIP archive or a folder
+    /// (software that came as files rather than discs), and fits it.
+    func newHardDiscFromFiles(drive: Int) {
+        let open = NSOpenPanel()
+        open.canChooseDirectories = true
+        open.canChooseFiles = true
+        open.allowedContentTypes = [.zip, .folder]
+        open.message = "Choose a ZIP archive or a folder of RISC OS files to copy onto a new hard disc for drive \(drive + 4). Filetypes come from the archive's RISC OS information, or from \",xxx\" suffixes on names."
+        open.prompt = "Choose"
+        guard open.runModal() == .OK, let source = open.url else { return }
+        let items: [ADFSHardDiscBuilder.Item]
+        do { items = try ADFSHardDiscBuilder.items(from: source.path) } catch {
+            alert("Could not read \(source.lastPathComponent)", "\(error)")
+            return
+        }
+        let needed = items.reduce(0x10000) { $0 + $1.data.count + 2048 }
+        guard let (url, geometry) = chooseNewHardDisc(drive: drive, message: "A new hard disc holding the \(items.count) files from \(source.lastPathComponent), for drive \(drive + 4). The machine will be power cycled.", minimumBytes: needed) else { return }
+        do {
+            try ADFSHardDiscBuilder.create(path: url.path, geometry: geometry, name: (url.lastPathComponent as NSString).deletingPathExtension, items: items)
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+            alert("Could not create the hard disc", "\(error)")
+            return
+        }
+        fitHardDisc(url.path, drive: drive)
+    }
+
+    /// Takes the drive out (power cycles). The image file keeps its contents.
+    func ejectHardDisc(drive: Int) {
+        fitHardDisc(nil, drive: drive)
+    }
+
+    // MARK: Screenshots
+
+    private func screenshotPNG() -> Data? {
+        guard let f = host?.frame, f.width > 1 else { return nil }
+        return PNGEncoder.encode(f, scaleX: f.scaleX, scaleY: f.scaleY)
+    }
+
+    private static func timestamp() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+        return f.string(from: Date())
+    }
+
+    func saveScreenshot() {
+        guard let png = screenshotPNG() else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = "Archimedes \(Self.timestamp()).png"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try png.write(to: url) } catch { alert("Could not save the screenshot", error.localizedDescription) }
+    }
+
+    func copyScreenshot() {
+        guard let png = screenshotPNG() else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setData(png, forType: .png)
+    }
+
+    // MARK: Recording
+
+    private(set) var recordingURL: URL?
+    @ObservationIgnored private var recorder: VideoRecorder?
+
+    /// Starts recording to a movie the user picks, or stops.
+    func toggleRecording() {
+        if let recorder {
+            host?.frameTap = nil
+            tee.recorder = nil
+            self.recorder = nil
+            recordingURL = nil
+            recorder.finish { error in
+                guard let error else { return }
+                Task { @MainActor in self.alert("The recording could not be finished", error.localizedDescription) }
+            }
+            return
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.mpeg4Movie, .quickTimeMovie]
+        panel.nameFieldStringValue = "Archimedes \(Self.timestamp()).mp4"
+        panel.message = "MP4 records H.264; MOV records ProRes."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        startRecording(to: url)
+    }
+
+    func startRecording(to url: URL) {
+        guard let host, recorder == nil else { return }
+        do {
+            let r = try VideoRecorder(url: url, codec: url.pathExtension.lowercased() == "mov" ? .proRes : .h264)
+            recorder = r
+            recordingURL = url
+            tee.recorder = r
+            host.frameTap = { frame, ticks in r.addFrame(frame, ticks: ticks) }
+        } catch {
+            alert("Could not start recording", error.localizedDescription)
+        }
+    }
+
+    /// Recordings follow guest time, which a load or rewind makes jump.
+    private func stopRecordingIfNeeded() {
+        if recorder != nil { toggleRecording() }
+    }
+
+    // MARK: Save states
+
+    static let stateExtension = "macarchstate"
+    static let stateType = UTType(filenameExtension: stateExtension) ?? .data
+
+    static var quickStateURL: URL {
+        URL(fileURLWithPath: (AppSettings.supportDirectory as NSString).appendingPathComponent("Snapshots/quick.\(stateExtension)"))
+    }
+
+    func saveState() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [Self.stateType]
+        panel.nameFieldStringValue = "\(discName.map { ($0 as NSString).deletingPathExtension } ?? "Archimedes") \(Self.timestamp()).\(Self.stateExtension)"
+        panel.message = "Discs are referenced, not copied: keep the image files where they are."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        saveState(to: url)
+    }
+
+    func saveState(to url: URL) {
+        host?.send { s in
+            let data = s.machine.snapshot(createdBy: "MacArch")
+            do {
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data(data).write(to: url)
+            } catch {
+                Task { @MainActor in self.alert("Could not save the state", error.localizedDescription) }
+            }
+        }
+    }
+
+    func loadState() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [Self.stateType]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        loadState(url)
+    }
+
+    func loadState(_ url: URL) {
+        guard confirmDiscChanges(before: "loading a state") else { return }
+        guard let host, let data = FileManager.default.contents(atPath: url.path) else {
+            alert("Could not read \(url.lastPathComponent)", "")
+            return
+        }
+        stopRecordingIfNeeded()
+        host.send { s in
+            do {
+                // Reuse open hard disc images when the state names the same files.
+                let header = try Snapshot.header(of: [UInt8](data))
+                let current = s.machine.hdc?.drives ?? []
+                let reuse: [HardDiscImage?]? = header.configuration.hardDiscs.isEmpty ? nil : header.configuration.hardDiscs.enumerated().map { i, p in
+                    i < current.count && current[i]?.path == p ? current[i] : (p.flatMap { try? HardDiscImage.open(path: $0) })
+                }
+                let m = try Machine.restore(snapshot: [UInt8](data), rom: s.machine.rom, hardDiscs: reuse)
+                s.replace(with: m)
+                s.host.setPersistCMOS(false, session: s)
+                let name = m.fdc.drives[0].disc?.sourcePath.map { ($0 as NSString).lastPathComponent }
+                let config = m.configuration
+                Task { @MainActor in
+                    // The state brings its own machine: show what it is.
+                    self.model = config.model; self.cpu = config.cpu; self.ramKB = config.ramKB
+                    self.hardDiscs = (0..<config.model.hardDiscSlots).map { $0 < config.hardDiscs.count ? config.hardDiscs[$0] : nil }
+                    self.discName = name
+                    NSDocumentController.shared.noteNewRecentDocumentURL(url)
+                }
+            } catch {
+                Task { @MainActor in self.alert("Could not load \(url.lastPathComponent)", "\(error)") }
+            }
+        }
+    }
+
+    func quickSave() { saveState(to: Self.quickStateURL) }
+
+    func quickLoad() {
+        guard FileManager.default.fileExists(atPath: Self.quickStateURL.path) else {
+            alert("No quick save yet", "Use Quick Save first.")
+            return
+        }
+        loadState(Self.quickStateURL)
+    }
+
+    // MARK: Rewind
+
+    var showingTimeline = false
+
+    /// Goes back `seconds` of guest time, as far as the history goes.
+    func rewind(seconds: Double) {
+        guard let host else { return }
+        let back = UInt64(seconds * Double(MasterClock.ticksPerSecond))
+        let now = host.sendAndWait { $0.machine.nominalTicks }
+        seek(to: now > back ? now - back : 0)
+    }
+
+    func seek(to ticks: UInt64) {
+        guard let host else { return }
+        let changed = host.sendAndWait { $0.rewinder.hardDiscChanged(goingBackTo: ticks, from: $0.machine) }
+        if changed {
+            let a = NSAlert()
+            a.messageText = "Rewind past hard disc changes?"
+            a.informativeText = "The hard disc has been written since then. Rewinding does not undo those writes, so RISC OS may find its files changed underneath it and could damage the disc."
+            a.addButton(withTitle: "Rewind")
+            a.addButton(withTitle: "Cancel")
+            guard a.runModal() == .alertFirstButtonReturn else { return }
+        }
+        stopRecordingIfNeeded()
+        host.send { Self.seek($0, to: ticks) }
+    }
+
+    nonisolated private static func seek(_ s: EmulatorHost.Session, to ticks: UInt64) {
+        guard let earliest = s.rewinder.earliestTicks else { return }
+        if let m = try? s.rewinder.machine(at: max(earliest, ticks), from: s.machine) {
+            s.replace(with: m, keepHistory: true)
+        }
+    }
+
+    /// The history's points (guest ticks) and the current time.
+    func rewindPoints() async -> (points: [UInt64], now: UInt64) {
+        await perform { s in (s.rewinder.points.map(\.ticks), s.machine.nominalTicks) } ?? ([], 0)
+    }
+
+    func rewindThumbnail(_ index: Int) async -> CGImage? {
+        let pixels = await perform { s -> [UInt32] in
+            s.rewinder.points.indices.contains(index) ? s.rewinder.points[index].thumbnail : []
+        } ?? []
+        let w = Rewinder.thumbnailWidth, h = Rewinder.thumbnailHeight
+        guard pixels.count == w * h, let provider = CGDataProvider(data: Data(bytes: pixels, count: pixels.count * 4) as CFData) else { return nil }
+        return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+                       space: CGColorSpaceCreateDeviceRGB(),
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+    }
+
+    /// Runs `body` on the emulation thread and returns its result.
+    private func perform<T: Sendable>(_ body: @escaping @Sendable (EmulatorHost.Session) -> T) async -> T? {
+        guard let host else { return nil }
+        return await withCheckedContinuation { c in host.send { c.resume(returning: body($0)) } }
+    }
+
+    // MARK: Zoom
+
+    static let zoomLevels: [Double] = [0.5, 0.75, 1, 1.25, 1.5, 2]
+    @ObservationIgnored private var currentZoom = 1.0
+    /// The zoom level the window is at, if it is at one (to within 1%).
+    private(set) var zoom: Double? = 1
+
+    func pictureZoomed(_ z: Double) {
+        currentZoom = z
+        let level = Self.zoomLevels.first { abs($0 - z) < 0.01 * $0 }
+        if level != zoom { zoom = level }
+    }
+
+    func setZoom(_ z: Double) {
+        NotificationCenter.default.post(name: EmulatorNSView.setZoom, object: self, userInfo: ["zoom": z])
+    }
+
+    func zoom(in zoomIn: Bool) {
+        let next = zoomIn ? Self.zoomLevels.first { $0 > currentZoom * 1.01 } : Self.zoomLevels.last { $0 < currentZoom * 0.99 }
+        if let next { setZoom(next) }
+    }
+
+    // MARK: Agents
+
+    /// Recording for agents, run on the emulation thread; the window
+    /// learns of it afterwards.
+    private func agentRecordingHooks(host h: EmulatorHost) -> AgentRecordingHooks {
+        let tee = self.tee
+        let lock = NSLock()
+        nonisolated(unsafe) var current: VideoRecorder?
+        return AgentRecordingHooks(start: { [weak self, weak h] url in
+            lock.lock(); defer { lock.unlock() }
+            guard current == nil else { throw DebuggerError("already recording") }
+            let r = try VideoRecorder(url: url, codec: url.pathExtension.lowercased() == "mov" ? .proRes : .h264)
+            current = r
+            tee.recorder = r
+            h?.frameTap = { frame, ticks in r.addFrame(frame, ticks: ticks) }
+            Task { @MainActor in self?.adoptRecording(r, url) }
+        }, stop: { [weak self, weak h] in
+            lock.lock(); defer { lock.unlock() }
+            guard current != nil else { return false }
+            current = nil
+            Task { @MainActor in self?.toggleRecording() }
+            _ = h
+            return true
+        }, isRecording: { lock.lock(); defer { lock.unlock() }; return current != nil })
+    }
+
+    private func adoptRecording(_ r: VideoRecorder, _ url: URL) {
+        recorder = r
+        recordingURL = url
+    }
+
+    /// An agent switched the hardware: show it as this window's.
+    func adoptAgentHardware(_ c: MachineConfiguration) {
+        model = c.model; cpu = c.cpu; ramKB = c.ramKB; monitor = c.monitorType
+        hardDiscs = (0..<c.model.hardDiscSlots).map { $0 < c.hardDiscs.count ? c.hardDiscs[$0] : nil }
+        if let p = c.romPaths.first { romPath = p }
+    }
+
+    /// The screen address under the mouse, while the debugger is open.
+    func hover(x: Int, y: Int) {
+        guard inspecting, let host else { inspection = nil; return }
+        inspection = host.sendAndWait { s in s.machine.screenAddress(x: x, y: y) }
+    }
+
+    // MARK: Window
+
+    /// The model, with an upgrade processor when one is fitted.
+    var machineName: String { model.displayName + (cpu != model.defaultCPU ? " + \(cpu.rawValue)" : "") }
+
+    var title: String {
+        if host == nil { return "Welcome to MacArch" }
+        var t = discName.map { "\(machineName) — \($0)" + (disc.modified ? " (edited)" : "") } ?? machineName
+        if paused { t += " (Paused)" } else if heldForAgent { t += " (Held by AI Agent)" }
+        if recordingURL != nil { t += " ● Recording" }
+        return t
+    }
+
+    /// Quit check: every window's disc changes.
+    static func confirmQuit() -> Bool {
+        let ok = live.allObjects.allSatisfy { $0.confirmDiscChanges(before: "quitting") }
+        if ok { live.allObjects.forEach { $0.syncHardDiscs() } }
+        return ok
+    }
+
+    func alert(_ message: String, _ info: String) {
+        let a = NSAlert()
+        a.messageText = message
+        a.informativeText = info
+        a.alertStyle = .warning
+        a.runModal()
+    }
+}
