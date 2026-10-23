@@ -26,7 +26,9 @@ cp "$BIN/MacArch" "$BIN/macarch-mcp" "$BIN/macarch-cli" "$APP/Contents/MacOS/"
 cp Apps/MacArch/Info.plist "$APP/Contents/Info.plist"
 # The icon: Icon Composer's AppIcon.icon (layers drawn by Tools/icon/draw.py),
 # compiled to Assets.car and AppIcon.icns.
-xcrun actool Apps/MacArch/Resources/AppIcon.icon --compile "$APP/Contents/Resources" --platform macosx \
+# An absolute path: actool hands the icon to a long-lived helper, which
+# resolves relative paths from wherever it was first started.
+xcrun actool "$PWD/Apps/MacArch/Resources/AppIcon.icon" --compile "$APP/Contents/Resources" --platform macosx \
     --minimum-deployment-target 14.0 --app-icon AppIcon \
     --output-partial-info-plist build/AppIcon-partial.plist > /dev/null
 rm -f build/AppIcon-partial.plist
