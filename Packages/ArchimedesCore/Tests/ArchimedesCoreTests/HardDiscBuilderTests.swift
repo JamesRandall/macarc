@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import zlib
 @testable import ArchimedesCore
 
 final class HardDiscBuilderTests: XCTestCase {
@@ -16,7 +17,8 @@ final class HardDiscBuilderTests: XCTestCase {
                 extra = le16(0x4341) + le16(20) + Array("ARC0".utf8) + le32(load) + le32(exec) + le32(3) + le32(0)
             }
             let name = Array(m.name.utf8)
-            let common = le16(20) + le16(0) + le16(m.deflate ? 8 : 0) + le16(0) + le16(0x21) + le32(0)
+            let crc = m.data.withUnsafeBufferPointer { UInt32(crc32(0, $0.baseAddress, uInt($0.count))) }
+            let common = le16(20) + le16(0) + le16(m.deflate ? 8 : 0) + le16(0) + le16(0x21) + le32(crc)
                 + le32(UInt32(body.count)) + le32(UInt32(m.data.count)) + le16(name.count) + le16(extra.count)
             central += le32(0x0201_4B50) + le16(20) + common + le16(0) + le16(0) + le16(0) + le32(0) + le32(UInt32(out.count)) + name + extra
             out += le32(0x0403_4B50) + common + name + extra + body
@@ -208,5 +210,92 @@ final class HardDiscBuilderTests: XCTestCase {
         XCTAssertEqual(listing["Added.Made.Copy"], 0x8000)
         XCTAssertNil(listing["Games.Old"])
         try ADFSHardDiscWriter.add(path: path, items: [.init(path: ["Added", "Made", "Again"], data: [1, 2], type: 0xFFD)])
+    }
+
+    /// Every file's contents, by path.
+    static func contents(_ path: String) throws -> [String: [UInt8]] {
+        let v = try ADFSHardDiscWriter.Volume(path: path)
+        var out: [String: [UInt8]] = [:]
+        func walk(_ address: Int, _ prefix: String) throws {
+            for e in try v.directory(at: address, path: prefix).entries {
+                let name = prefix + (prefix.isEmpty ? "" : ".") + String(decoding: e.name, as: UTF8.self)
+                if e.isDirectory { try walk(e.sector * 256, name) } else { out[name] = v.read(e.sector * 256, Int(e.length)) }
+            }
+        }
+        try walk(0x400, "")
+        return out
+    }
+
+    /// A 20 MB drive with gaps where two 3 MB files were, and a directory
+    /// (with one inside it) above them.
+    static func fragmentedDrive(_ path: String, geometry g: HardDiscGeometry = HardDiscGeometry(cylinders: 615, heads: 4)) throws -> [String: [UInt8]] {
+        func pattern(_ n: Int, _ seed: Int) -> [UInt8] { (0..<n).map { UInt8(truncatingIfNeeded: $0 &* (seed * 2 + 1) &+ seed) } }
+        var items: [ADFSHardDiscBuilder.Item] = (1...5).map { .init(path: ["File\($0)"], data: pattern(3 << 20, $0), type: 0xFFD) }
+        items.append(.init(path: ["Sub", "Notes"], data: Array("Moved by compaction\n".utf8), type: 0xFFF))
+        items.append(.init(path: ["Sub", "Deeper", "Blob"], data: pattern(70_000, 9), type: 0xFFD))
+        try ADFSHardDiscBuilder.create(path: path, geometry: g, name: "Frag", items: items)
+        try ADFSHardDiscWriter.add(path: path, items: [.init(path: ["File2"], data: [2], type: 0xFFD), .init(path: ["File4"], data: [4], type: 0xFFD)])
+        return try contents(path)
+    }
+
+    func testCompactingMakesRoom() throws {
+        for g in [HardDiscGeometry(cylinders: 615, heads: 4), HardDiscGeometry(cylinders: 160, heads: 8, sectorsPerTrack: 32, sectorSize: 512)] {
+            let path = NSTemporaryDirectory() + "macarch-frag-\(UUID().uuidString).hdf"
+            defer { try? FileManager.default.removeItem(atPath: path) }
+            let before = try Self.fragmentedDrive(path, geometry: g)
+            let big = ADFSHardDiscBuilder.Item(path: ["Big"], data: (0..<(5 << 20)).map { UInt8(truncatingIfNeeded: $0 >> 3) }, type: 0xFFD)
+            XCTAssertThrowsError(try ADFSHardDiscWriter.plan(path: path, items: [big])) { e in
+                XCTAssertTrue((e as? ADFSHardDiscWriter.WriteError)?.isFragmented == true, "\(e)")
+            }
+            let plan = try ADFSHardDiscWriter.plan(path: path, items: [big], compact: true)
+            XCTAssertGreaterThan(plan.bytesMoved, 6 << 20)
+            XCTAssertEqual(try Self.contents(path), before, "planning changes nothing")
+            let done = try ADFSHardDiscWriter.add(path: path, items: [big], compact: true)
+            XCTAssertEqual(done, plan)
+            var expected = before
+            expected["Big"] = big.data
+            XCTAssertEqual(try Self.contents(path), expected, "every file kept its contents")
+            let v = try ADFSHardDiscWriter.Volume(path: path)
+            XCTAssertEqual(v.free.count, 1, "the free space is one area")
+            // The moved directories point at their moved parents.
+            let sub = try v.directory(at: 0x400, path: "$").entries.first { $0.name == Array("Sub".utf8) }!
+            let subDir = try v.directory(at: sub.sector * 256, path: "Sub")
+            let deeper = try v.directory(at: subDir.entries.first { $0.name == Array("Deeper".utf8) }!.sector * 256, path: "Deeper")
+            XCTAssertEqual(Int(deeper.bytes[2010]) | Int(deeper.bytes[2011]) << 8 | Int(deeper.bytes[2012]) << 16, sub.sector)
+            XCTAssertEqual(Int(subDir.bytes[2010]) | Int(subDir.bytes[2011]) << 8, 0x4)
+        }
+    }
+
+    /// RISC OS uses a drive MacArch compacted: moved files in moved
+    /// directories, and writing more.
+    func testRISCOSUsesCompactedDrive() throws {
+        guard let dir = GameSmokeTests.romDir("riscos3_11") else { throw XCTSkip("RISC OS 3.11 ROM not present") }
+        let path = NSTemporaryDirectory() + "macarch-compacted-\(UUID().uuidString).hdf"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let before = try Self.fragmentedDrive(path)
+        try ADFSHardDiscWriter.add(path: path, items: [.init(path: ["Big"], data: [UInt8](repeating: 0x5A, count: 5 << 20), type: 0xFFD)], compact: true)
+        var c = MachineConfiguration(model: .a440)
+        c.romPaths = [dir]
+        c.hardDiscs = [path]
+        c.powerOnKeys = [0x34]
+        let m = try Machine(configuration: c)
+        m.powerOn()
+        m.run(seconds: 25)
+        m.keyDown(0x0C); m.run(seconds: 0.1); m.keyUp(0x0C) // F12
+        m.run(seconds: 1)
+        m.scheduleTyping("*Type :4.$.Sub.Notes\n*Load :4.$.Sub.Deeper.Blob 10000\n*CDir :4.$.Sub.Deeper.New\n*Save :4.$.Sub.Deeper.New.Copy 10000 +8000\n*Delete :4.$.File3\n*Ex :4.$.Sub.Deeper\n", intervalMs: 40)
+        m.run(seconds: 25)
+        m.hdc?.drives.forEach { $0?.synchronize() }
+        let text = m.recentText
+        XCTAssertTrue(text.contains("Moved by compaction"), String(text.suffix(600)))
+        for bad in ["Broken directory", "Bad free space map", "Map full", "not found", "Disc error"] {
+            XCTAssertFalse(text.contains(bad), "\(bad): " + String(text.suffix(600)))
+        }
+        let blob = before["Sub.Deeper.Blob"]!
+        XCTAssertEqual((0..<blob.count).map { m.memc.debugRead(0x10000 + UInt32($0), space: .logical) ?? 0 }, blob)
+        let after = try Self.contents(path)
+        XCTAssertEqual(after["Sub.Deeper.New.Copy"]?.count, 0x8000)
+        XCTAssertNil(after["File3"])
+        XCTAssertEqual(after["File5"], before["File5"])
     }
 }

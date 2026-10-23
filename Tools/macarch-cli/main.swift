@@ -119,13 +119,16 @@ case "hard-disc-create":
     print(p)
 
 case "hard-disc-add":
-    // hard-disc-add <file> <zip or folder>...: copies the files onto an existing old-map drive
-    guard args.count >= 2 else { fail("hard-disc-add <file> <zip or folder>...", code: 1) }
+    // hard-disc-add <file> <zip or folder>... [--compact]: copies the files onto an existing old-map drive
+    // (--compact closes up the gaps between files first, as *Compact does)
+    let paths = args.filter { $0 != "--compact" }
+    guard paths.count >= 2 else { fail("hard-disc-add <file> <zip or folder>... [--compact]", code: 1) }
     do {
-        let items = try args.dropFirst().flatMap { try ADFSHardDiscBuilder.items(from: $0) }
-        let s = try ADFSHardDiscWriter.add(path: args[0], items: items)
+        let items = try paths.dropFirst().flatMap { try ADFSHardDiscBuilder.items(from: $0) }
+        let s = try ADFSHardDiscWriter.add(path: paths[0], items: items, compact: flag("--compact"))
         print(JSON.encode(["added": s.added.joined(separator: " "), "replaced": s.replaced.joined(separator: " "),
-                           "directoriesMade": s.directoriesMade.joined(separator: " "), "bytesFree": String(s.bytesFree)]))
+                           "directoriesMade": s.directoriesMade.joined(separator: " "), "bytesFree": String(s.bytesFree),
+                           "bytesMoved": String(s.bytesMoved)]))
     } catch { fail("\(error)", code: 3) }
 
 case "rom-info":

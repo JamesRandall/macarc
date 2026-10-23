@@ -518,8 +518,22 @@ final class MachineController {
         let name = (path as NSString).lastPathComponent
         let sources = given ?? chooseFileSources("Choose ZIP archives or folders of RISC OS files to add to \(name) (drive \(drive + 4)).")
         guard !sources.isEmpty, let items = items(from: sources) else { return }
-        let plan: ADFSHardDiscWriter.Summary
-        do { plan = try ADFSHardDiscWriter.plan(path: path, items: items) } catch {
+        var plan: ADFSHardDiscWriter.Summary
+        var compact = false
+        do { plan = try ADFSHardDiscWriter.plan(path: path, items: items) } catch let e as ADFSHardDiscWriter.WriteError where e.isFragmented {
+            // There is room, but split between gaps: offer to close them up.
+            let a = NSAlert()
+            a.messageText = "\(name) has room, but not in one piece"
+            a.informativeText = "\(e)\n\nMacArch can compact the drive first, as *Compact does: files move to close the gaps, and the free space becomes one area. It works on a copy, so the drive is unchanged if anything goes wrong."
+            a.addButton(withTitle: "Compact and Continue")
+            a.addButton(withTitle: "Cancel")
+            guard a.runModal() == .alertFirstButtonReturn else { return }
+            do { plan = try ADFSHardDiscWriter.plan(path: path, items: items, compact: true) } catch {
+                alert("Could not add the files to \(name)", "\(error)")
+                return
+            }
+            compact = true
+        } catch {
             alert("Could not add the files to \(name)", "\(error)")
             return
         }
@@ -530,13 +544,14 @@ final class MachineController {
             let shown = plan.replaced.prefix(6).map { "$." + $0 }.joined(separator: "\n")
             info = "\(plan.replaced.count) files already on the disc will be replaced:\n\(shown)" + (plan.replaced.count > 6 ? "\n…" : "") + "\n\n" + info
         }
+        if compact { info = "The drive will be compacted first (\(plan.bytesMoved / 1024) KB moved). " + info }
         a.informativeText = info + " \(plan.bytesFree / 1024) KB will be left free."
         a.addButton(withTitle: plan.replaced.isEmpty ? "Add" : "Replace")
         a.addButton(withTitle: "Cancel")
         guard a.runModal() == .alertFirstButtonReturn else { return }
         // Stop the running machine writing to the drive behind the change.
         host?.sendAndWait { s in s.machine.hdc?.drives.forEach { $0?.synchronize(); $0?.suppressWrites = true } }
-        do { try ADFSHardDiscWriter.add(path: path, items: items) } catch {
+        do { try ADFSHardDiscWriter.add(path: path, items: items, compact: compact) } catch {
             host?.sendAndWait { s in s.machine.hdc?.drives.forEach { $0?.suppressWrites = false } }
             alert("Could not add the files to \(name)", "\(error)")
             return

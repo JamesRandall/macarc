@@ -12,6 +12,13 @@ import Foundation
 /// A changed directory's master sequence number, at its start and at
 /// &7FA, goes up by one as FileCore's own writes do.
 ///
+/// With `compact`, the drive is first compacted as *Compact does: every
+/// file and directory slides down, in address order, to close the gaps
+/// below it, the directories are pointed at the new places (a moved
+/// directory's children at it as their parent), and the free space becomes
+/// one area at the end. Each move goes to a lower address, so copying them
+/// in that order never overwrites data still to be moved.
+///
 /// Changes are made to a clone of the image that then takes its place, so
 /// a failure part way leaves the drive as it was. The machine must not
 /// have the drive open while this runs: RISC OS keeps the map and
@@ -23,6 +30,8 @@ public enum ADFSHardDiscWriter {
         public var replaced: [String] = []
         public var directoriesMade: [String] = []
         public var bytesFree = 0
+        /// Moved while compacting (0 when not compacted).
+        public var bytesMoved = 0
     }
 
     public enum WriteError: Error, CustomStringConvertible {
@@ -31,27 +40,39 @@ public enum ADFSHardDiscWriter {
         case mapFull
         case noRoom(path: String, needed: Int, largestFree: Int, totalFree: Int)
 
+        /// There is room in all, but not in one piece: compacting would help.
+        public var isFragmented: Bool {
+            switch self {
+            case .mapFull: return true
+            case .noRoom(_, let n, _, let t): return n <= t
+            default: return false
+            }
+        }
+
         public var description: String {
             switch self {
             case .notOldMap(let s): return "Only old-map (\"D\" format) hard discs can be added to: \(s)"
             case .damaged(let s): return "The hard disc looks damaged (\(s)); nothing was changed."
-            case .mapFull: return "The free space map is too fragmented to record any more free areas. Run *Compact on the drive in RISC OS, then try again."
+            case .mapFull: return "The free space map is too fragmented to record any more free areas. Compact the drive, then try again."
             case .noRoom(let p, let n, let l, let t):
-                if n <= t { return "\(p) needs \(n / 1024) KB in one piece, but the largest free area is \(l / 1024) KB (\(t / 1024) KB free in all). Run *Compact on the drive in RISC OS, then try again." }
+                if n <= t { return "\(p) needs \(n / 1024) KB in one piece, but the largest free area is \(l / 1024) KB (\(t / 1024) KB free in all). Compact the drive, then try again." }
                 return "There isn't room: \(p) needs \(n / 1024) KB but only \(t / 1024) KB is free."
             }
         }
     }
 
     /// What `add` would do, without changing the image.
-    public static func plan(path: String, items: [ADFSHardDiscBuilder.Item]) throws -> Summary {
+    public static func plan(path: String, items: [ADFSHardDiscBuilder.Item], compact: Bool = false) throws -> Summary {
         let v = try Volume(path: path)
-        return try v.add(items)
+        let moved = compact ? try v.compact() : 0
+        var s = try v.add(items)
+        s.bytesMoved = moved
+        return s
     }
 
     /// Adds `items` to the image at `path`.
     @discardableResult
-    public static func add(path: String, items: [ADFSHardDiscBuilder.Item]) throws -> Summary {
+    public static func add(path: String, items: [ADFSHardDiscBuilder.Item], compact: Bool = false) throws -> Summary {
         let url = URL(fileURLWithPath: path)
         let work = url.deletingLastPathComponent().appendingPathComponent("." + url.lastPathComponent + ".adding")
         let fm = FileManager.default
@@ -59,7 +80,9 @@ public enum ADFSHardDiscWriter {
         try fm.copyItem(at: url, to: work) // a clone on APFS
         do {
             let v = try Volume(path: work.path)
-            let summary = try v.add(items)
+            let moved = compact ? try v.compact() : 0
+            var summary = try v.add(items)
+            summary.bytesMoved = moved
             try v.commit()
             guard rename(work.path, url.path) == 0 else { throw HardDiscError.create(String(cString: strerror(errno))) }
             return summary
@@ -80,10 +103,11 @@ public enum ADFSHardDiscWriter {
     }
 
     final class Directory {
-        let address: Int
+        var address: Int
         var bytes: [UInt8]
         var entries: [Entry]
         var path: String
+        var changed = false
         init(address: Int, bytes: [UInt8], entries: [Entry], path: String) {
             self.address = address; self.bytes = bytes; self.entries = entries; self.path = path
         }
@@ -96,8 +120,12 @@ public enum ADFSHardDiscWriter {
         var map: [UInt8]
         var free: [(start: Int, length: Int)] // 256-byte units, by address
         var directories: [Int: Directory] = [:]
-        var changed: Set<Int> = []
         var data: [(offset: Int, bytes: [UInt8])] = []
+        /// Compaction's copies, in the order they must be made.
+        var moves: [(from: Int, to: Int, count: Int)] = []
+        let boot: [UInt8]
+        /// The end of the drive, from the map's size field.
+        let end: Int
 
         init(path: String) throws {
             let fd = Darwin.open(path, O_RDWR)
@@ -132,6 +160,8 @@ public enum ADFSHardDiscWriter {
             let log2 = Int(boot[0x1C0])
             self.fd = fd
             self.size = size
+            self.boot = boot
+            self.end = min(size, get24(0x0FC) > 0 ? get24(0x0FC) * 256 : size)
             self.unit = (8...12).contains(log2) ? (1 << log2) / 256 : 1
             self.map = map
             self.free = free.sorted { $0.start < $1.start }
@@ -186,8 +216,8 @@ public enum ADFSHardDiscWriter {
             b[2010] = UInt8(ps & 0xFF); b[2011] = UInt8((ps >> 8) & 0xFF); b[2012] = UInt8((ps >> 16) & 0xFF)
             b[0] = 0xFF; b[2042] = 0xFF // the first write makes them 0
             let d = Directory(address: address, bytes: b, entries: [], path: path)
+            d.changed = true
             directories[address] = d
-            changed.insert(address)
             return d
         }
 
@@ -211,6 +241,9 @@ public enum ADFSHardDiscWriter {
         }
 
         func release(address: Int, length: Int) throws {
+            // An empty file may have been given no space (RISC OS's own),
+            // so freeing one could free someone else's.
+            guard length > 0 else { return }
             let s = address / 256, l = roundUp(length) / 256
             free.append((s, l))
             free.sort { $0.start < $1.start }
@@ -235,7 +268,61 @@ public enum ADFSHardDiscWriter {
             d.entries.removeAll { Volume.key($0.name) == k }
             let at = d.entries.firstIndex { k.lexicographicallyPrecedes(Volume.key($0.name)) } ?? d.entries.count
             d.entries.insert(e, at: at)
-            changed.insert(d.address)
+            d.changed = true
+        }
+
+        /// Closes up the gaps between files and directories (see the type's
+        /// notes). Returns the number of bytes to be moved.
+        func compact() throws -> Int {
+            // A real drive's boot block can list defective sectors, which
+            // must stay out of use; only drives without any are compacted.
+            let firstDefect = UInt32(boot[0]) | UInt32(boot[1]) << 8 | UInt32(boot[2]) << 16 | UInt32(boot[3]) << 24
+            guard firstDefect & 0x2000_0000 != 0 else { throw WriteError.damaged("its boot block lists defective sectors, so it can't be compacted safely") }
+            struct Object { var address: Int; let size: Int; let owner: Directory; let index: Int; let directory: Directory? }
+            var objects: [Object] = []
+            var parents: [(child: Directory, parent: Directory)] = []
+            func walk(_ d: Directory, depth: Int) throws {
+                guard depth < 32 else { throw WriteError.damaged("directories nest too deeply under \(d.path)") }
+                for (i, e) in d.entries.enumerated() {
+                    let name = d.path + "." + String(decoding: e.name, as: UTF8.self)
+                    if e.isDirectory {
+                        let c = try directory(at: e.sector * 256, path: name)
+                        objects.append(Object(address: c.address, size: ADFSHardDiscBuilder.directorySize, owner: d, index: i, directory: c))
+                        parents.append((c, d))
+                        try walk(c, depth: depth + 1)
+                    } else if e.length > 0 {
+                        objects.append(Object(address: e.sector * 256, size: roundUp(Int(e.length)), owner: d, index: i, directory: nil))
+                    }
+                }
+            }
+            try walk(try directory(at: 0x400, path: "$"), depth: 0)
+            objects.sort { $0.address < $1.address }
+            var cursor = roundUp(0xE00), previousEnd = 0xE00, moved = 0
+            for o in objects {
+                guard o.address >= previousEnd, o.address + o.size <= end else {
+                    throw WriteError.damaged("\(o.directory?.path ?? o.owner.path) overlaps another object or lies beyond the drive")
+                }
+                previousEnd = o.address + o.size
+                if o.address != cursor {
+                    moves.append((o.address, cursor, o.size))
+                    moved += o.size
+                    o.owner.entries[o.index].sector = cursor >> 8
+                    o.owner.changed = true
+                    if let d = o.directory { d.address = cursor; d.changed = true }
+                }
+                cursor += o.size
+            }
+            for (child, parent) in parents {
+                let p = parent.address >> 8
+                let bytes: [UInt8] = [UInt8(p & 0xFF), UInt8((p >> 8) & 0xFF), UInt8((p >> 16) & 0xFF)]
+                if Array(child.bytes[2010...2012]) != bytes {
+                    child.bytes.replaceSubrange(2010...2012, with: bytes)
+                    child.changed = true
+                }
+            }
+            directories = Dictionary(uniqueKeysWithValues: directories.values.map { ($0.address, $0) })
+            free = cursor < end ? [(cursor / 256, (end - cursor) / 256)] : []
+            return moved
         }
 
         func add(_ items: [ADFSHardDiscBuilder.Item]) throws -> Summary {
@@ -294,11 +381,19 @@ public enum ADFSHardDiscWriter {
             }
         }
 
-        /// Writes the files, then the directories, then the map.
+        /// Makes compaction's moves, then writes the files, the directories
+        /// and the map.
         func commit() throws {
+            let chunk = 1 << 20
+            for m in moves {
+                // Forwards, a chunk at a time: the destination is lower.
+                for o in stride(from: 0, to: m.count, by: chunk) {
+                    try write(m.to + o, read(m.from + o, min(chunk, m.count - o)))
+                }
+            }
             for d in data { try write(d.offset, d.bytes) }
-            for address in changed.sorted() {
-                let d = directories[address]!
+            for d in directories.values.sorted(by: { $0.address < $1.address }) where d.changed {
+                let address = d.address
                 var b = d.bytes
                 for i in 5..<2007 { b[i] = 0 }
                 var p = 5

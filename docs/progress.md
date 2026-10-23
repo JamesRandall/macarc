@@ -251,10 +251,13 @@
 
 - `ADFSHardDiscWriter` adds files to an existing old-map drive (what MacArch makes, and !HForm's old-map option). Each file takes the first big enough area in the free space map, aligned to the sector size. Missing directories are made, a file of the same name is replaced and its space freed, and each changed directory's master sequence number goes up. The work is done on a clone of the image, which then takes its place, so a failure leaves the drive as it was. New-map ("E") drives are refused with a message.
 - App: Hard Disc ▸ Add Files to Hard Disc… for a fitted drive. It takes several ZIPs or folders at once, says which files would be replaced, then restarts the machine: RISC OS keeps the map and directories in memory, so writes from the old machine are stopped first. New Hard Disc from Files… also takes several sources now. Dropping a ZIP or folder that isn't a ROM on a running window offers to add it to a fitted drive, or to make a new one; several can be dropped at once.
-- CLI: `macarch-cli hard-disc-add FILE SOURCE...`.
+- Compaction (`compact:`), offered when there's room but not in one piece. As *Compact does, files and directories slide down in address order to close the gaps. Directory entries, and moved directories' parent pointers, follow them, and the free space becomes one area. The copies are made lowest first, each to a lower address, so nothing is overwritten before it has moved. Drives whose boot block lists defects are refused. Empty files are never freed, since RISC OS may have given them no space.
+- CLI: `macarch-cli hard-disc-add FILE SOURCE... [--compact]`.
 - ZIP method 6 (implode, PKZIP 1) is expanded (`ZipImplode`, from the APPNOTE), and every member's CRC is now checked. Zarch's desktop version (`Zarch (…)(Better desktop integration).zip`) needed it.
 - Tests:
   - `HardDiscBuilderTests` covers ST506 and IDE drives: planning changes nothing, adds, replacements, new directories, sector alignment, freed space merging back, conflicts, and a drive left unchanged when an add fails.
   - RISC OS reads replaced and added files, then makes a directory, saves into it and deletes a file. The drive it leaves can still be added to.
   - `testDoom` now builds the drive from Doom alone and adds !NetUtils afterwards.
   - `testZarchFromZip` runs the imploded archive.
+  - `testCompactingMakesRoom` (ST506 and IDE) uses a drive with two 3 MB gaps. A 5 MB file is refused as fragmented, then fits once the drive is compacted. Every file keeps its contents, the free space is one area, and moved directories point at their moved parents. Planning changes nothing.
+  - `testRISCOSUsesCompactedDrive`: RISC OS reads a moved file in a moved directory, makes a directory and saves into it there, and deletes a file.
