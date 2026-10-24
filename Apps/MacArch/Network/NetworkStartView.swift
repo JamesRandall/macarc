@@ -160,6 +160,12 @@ struct NetworkMenuItems: View {
         .disabled(RecentNetworks.shared.existing.isEmpty)
         Button("Save Network As…") { saveAs() }
             .disabled(session == nil)
+        Divider()
+        JoinRoomMenuItem()
+        Button(session?.isInRoom == true ? "Internet Network…" : "Share Network Over Internet…") {
+            session?.showingInternet = true
+        }
+        .disabled(session == nil)
     }
 
     private func saveAs() {

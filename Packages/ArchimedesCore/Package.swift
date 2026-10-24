@@ -17,7 +17,8 @@ let package = Package(
         ),
         .testTarget(
             name: "ArchimedesCoreTests",
-            dependencies: ["ArchimedesCore"]
+            dependencies: ["ArchimedesCore"],
+            resources: [.copy("Resources")]
         ),
     ],
     swiftLanguageModes: [.v5]

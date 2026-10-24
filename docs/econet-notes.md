@@ -144,6 +144,12 @@ See `docs/progress.md`. Two differences from MacBeeb's ADLC were needed by RISC 
 
 **Identical machines switched on together** do everything at exactly the same time, emulated, network transmissions too, so they collide for ever (seen as two workers' first broadcasts colliding on every retry). Real machines never start in the same instant, so a machine on a network leaves its power-on reset 97 µs a station after tick 0 (`Machine.powerOnSkewPerStation`).
 
+## Internet Econet (as built)
+
+MacBeeb's client and gateway, ported (`Econet/EconetGateway.swift`, `Econet/Internet/`), speaking acornplayground's room protocol (econet/docs/protocol.md), so MacArch and MacBeeb share rooms. The gateway is an `EconetLineDevice` on the line (devices are ports after the machines', transmitting as the remote stations they stand in for). Times are the network's ticks: a line is held at most 2 s, a frame from the room waits at most 0.1 s for the line.
+
+RISC OS's Econet module waits for an acknowledgement while the line is held with flags, as NFS does: `EconetGatewayTests` (two networks joined by a simulated room) pass at 0, 20 and 80 ms each way, and "not listening" comes through. Against a local service (`npm run dev`): two MacArch networks in a room (`InternetEconetLiveTests`, MACARCH_ECONET_SERVICE), and the app self-tests (MACARCH_SELFTEST_INTERNET=host|guest) with MacBeeb's (`-MacBeebNetworkSelfTestTemplate internetHost|internetGuest`): a Model B in MacBeeb logs on to MacArch's Level 4 server and catalogues it, and an A3000 to MacBeeb's Level 2 server.
+
 ## Joining MacBeeb's networks (design)
 
 - **Time:** network ticks are 24 MHz. MacBeeb's 2 MHz cycles are ×12 exactly. Both use a 16 µs quantum and a 16 µs line delay.

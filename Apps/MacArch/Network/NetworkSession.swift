@@ -32,6 +32,25 @@ final class NetworkSession: StationOwner {
     @ObservationIgnored private var statusTimer: Timer?
     @ObservationIgnored let thumbnails = ThumbnailCache()
 
+    // Its Internet Econet room (NetworkSession+Internet).
+    /// The gateway and connection, while it's in a room.
+    @ObservationIgnored var internet: InternetEconetLink?
+    /// The room as last heard.
+    var room: RoomConnection.Snapshot?
+    /// The invitation to show (the host's).
+    var currentInvite: Invite?
+    /// What the room was last told of this network's machines.
+    @ObservationIgnored var lastClaims: [StationClaim] = []
+    /// Screens: the connection, the timer that sends this network's, and
+    /// which are being made.
+    @ObservationIgnored var screens: RoomScreens?
+    @ObservationIgnored var screenTimer: Timer?
+    @ObservationIgnored var sendingScreens: Set<UUID> = []
+    /// Other members' machines' screens, by station.
+    var remoteScreens: [Int: CGImage] = [:]
+    /// The studio shows the Internet sheet (sharing, or the room).
+    var showingInternet = false
+
     /// The sessions open, by package.
     private(set) static var open: [URL: NetworkSession] = [:]
 
@@ -69,6 +88,7 @@ final class NetworkSession: StationOwner {
         }
         NSDocumentController.shared.noteNewRecentDocumentURL(url)
         RecentNetworks.shared.add(url)
+        connectToRoomIfLinked()
     }
 
     private func refreshStatus() {
@@ -87,6 +107,9 @@ final class NetworkSession: StationOwner {
 
     /// Closes the network: its machines stop, and it's saved.
     func close() {
+        stopScreens()
+        internet?.stop()
+        internet = nil
         saveNow()
         statusTimer?.invalidate()
         for controller in controllers.values { controller.detachFromNetwork() }
@@ -106,6 +129,7 @@ final class NetworkSession: StationOwner {
         if project.clockRate != self.project.clockRate { network.setClock(project.clockRate) }
         self.project = project
         scheduleSave()
+        roomClaimsMayHaveChanged()
     }
 
     private func scheduleSave() {

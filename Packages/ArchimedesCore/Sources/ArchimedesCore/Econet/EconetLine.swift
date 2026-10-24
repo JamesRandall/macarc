@@ -55,6 +55,19 @@ public protocol EconetInterface: AnyObject {
     func deliver(_ symbols: [(time: UInt64, symbol: EconetSymbol)])
 }
 
+/// Something on the line that isn't an emulated machine's Econet module
+/// (an Internet gateway). It works in the network's time, and hears and
+/// drives the line as a station does. (After MacBeeb's.)
+public protocol EconetLineDevice: AnyObject, Sendable {
+    /// Runs to `end` (network ticks): takes in what it's heard up to then,
+    /// and returns what it puts on the line in [`start`, `end`), each symbol
+    /// at its start time and as the station it's transmitting for.
+    func run(from start: UInt64, to end: UInt64, clock: Bool, bitTime: Int, delay: UInt64) -> [(time: UInt64, station: UInt8, symbol: EconetSymbol)]
+    /// Symbols from the others, at the network time each is in (all still to
+    /// come, in time order).
+    func hear(_ symbols: [(time: UInt64, symbol: EconetSymbol)])
+}
+
 public final class EconetLine {
     /// The clock's rate in bits a second, or nil if there's no clock.
     public var clockRate: Int?
@@ -77,6 +90,19 @@ public final class EconetLine {
     }
 
     private(set) var ports: [Port] = []
+    /// Devices on the line that aren't machines, and when each last finished
+    /// a symbol (and was collided with until).
+    private var devices: [(device: EconetLineDevice, lastEnd: UInt64, collidedUntil: UInt64)] = []
+
+    /// Plugs in a device (an Internet gateway).
+    public func attach(device: EconetLineDevice) {
+        guard !devices.contains(where: { $0.device === device }) else { return }
+        devices.append((device, 0, 0))
+    }
+
+    public func detach(device: EconetLineDevice) {
+        devices.removeAll { $0.device === device }
+    }
     /// The network's time at the start of the quantum.
     public private(set) var time: UInt64 = 0
 
@@ -137,6 +163,18 @@ public final class EconetLine {
                 sent.append(Sent(port: index, time: UInt64(Int64(bitPattern: t) + port.offset), symbol: symbol))
             }
         }
+        // Devices are ports after the machines', transmitting as the
+        // stations they speak for.
+        var deviceStation: [Int: [UInt64: UInt8]] = [:]
+        for (index, entry) in devices.enumerated() {
+            let port = ports.count + index
+            for (t, station, symbol) in entry.device.run(from: time, to: time + ticks, clock: clockRate != nil, bitTime: bitTime,
+                                                           delay: delay) {
+                sent.append(Sent(port: port, time: t, symbol: symbol))
+                deviceStation[port, default: [:]][t] = station
+            }
+        }
+        func lastEnd(_ port: Int) -> UInt64 { port < ports.count ? ports[port].lastEnd : devices[port - ports.count].lastEnd }
         let byteTime = UInt64(bitTime * 8)
         if !sent.isEmpty {
             // Two stations driving the line at once.
@@ -145,19 +183,30 @@ public final class EconetLine {
                 for j in sent.indices where sent[j].port != sent[i].port {
                     if sent[j].time < end && sent[j].time + byteTime > start { sent[i].collided = true }
                 }
-                for (index, port) in ports.enumerated() where index != sent[i].port && port.lastEnd > start
+                for index in 0..<(ports.count + devices.count) where index != sent[i].port && lastEnd(index) > start
                     && !sent.contains(where: { $0.port == index }) {
                     sent[i].collided = true
                 }
             }
             for item in sent where item.collided {
-                ports[item.port].collidedUntil = item.time + byteTime * 2
+                if item.port < ports.count {
+                    ports[item.port].collidedUntil = item.time + byteTime * 2
+                } else {
+                    devices[item.port - ports.count].collidedUntil = item.time + byteTime * 2
+                }
             }
             sent.sort { ($0.time, $0.port) < ($1.time, $1.port) }
             for item in sent {
-                ports[item.port].lastEnd = max(ports[item.port].lastEnd, item.time + byteTime)
-                observer?(EconetLineEvent(time: item.time, station: ports[item.port].interface.station,
-                                          symbol: item.symbol, collided: item.collided))
+                let station: UInt8
+                if item.port < ports.count {
+                    ports[item.port].lastEnd = max(ports[item.port].lastEnd, item.time + byteTime)
+                    station = ports[item.port].interface.station
+                } else {
+                    let d = item.port - ports.count
+                    devices[d].lastEnd = max(devices[d].lastEnd, item.time + byteTime)
+                    station = deviceStation[item.port]?[item.time] ?? 0
+                }
+                observer?(EconetLineEvent(time: item.time, station: station, symbol: item.symbol, collided: item.collided))
             }
             for (index, port) in ports.enumerated() where port.running {
                 let arriving = sent.filter { $0.port != index }.map { item in
@@ -166,6 +215,13 @@ public final class EconetLine {
                      symbol: item.collided ? EconetSymbol.garbage : item.symbol)
                 }
                 if !arriving.isEmpty { port.interface.deliver(arriving) }
+            }
+            for (index, entry) in devices.enumerated() {
+                let port = ports.count + index
+                let arriving = sent.filter { $0.port != port }.map { item in
+                    (time: item.time + byteTime + delay, symbol: item.collided ? EconetSymbol.garbage : item.symbol)
+                }
+                if !arriving.isEmpty { entry.device.hear(arriving) }
             }
         }
         time += ticks

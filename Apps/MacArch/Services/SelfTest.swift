@@ -9,6 +9,10 @@ import ArchimedesCore
 enum SelfTest {
     static func runIfRequested(_ machine: MachineController) {
         guard let path = ProcessInfo.processInfo.environment["MACARCH_SELFTEST"] else { return }
+        if let part = ProcessInfo.processInfo.environment["MACARCH_SELFTEST_INTERNET"] {
+            InternetSelfTest.run(path, host: part == "host")
+            return
+        }
         let wait = Double(ProcessInfo.processInfo.environment["MACARCH_SELFTEST_SECONDS"] ?? "") ?? 20
         let launched = Date()
         Task { @MainActor in

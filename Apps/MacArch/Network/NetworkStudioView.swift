@@ -97,6 +97,9 @@ struct NetworkStudioView: View {
         .toolbar { toolbar }
         .focusedSceneValue(commandTarget)
         .focusedSceneValue(session)
+        .sheet(isPresented: $session.showingInternet) {
+            InternetShareView(session: session)
+        }
         .confirmationDialog("Reset every machine?", isPresented: $confirmingReset) {
             Button("Reset All") { session.resetAll() }
         } message: {
@@ -152,6 +155,12 @@ struct NetworkStudioView: View {
             }
             .pickerStyle(.segmented)
             .help("Arrange the network, or use its machines side by side")
+        }
+        ToolbarItem {
+            Button { session.showingInternet = true } label: {
+                Label(session.isInRoom ? "Internet Network" : "Share Over Internet", systemImage: session.isInRoom ? "globe.badge.chevron.backward" : "globe")
+            }
+            .help(session.isInRoom ? "This network's Internet room: invitations, who's in it, and leaving" : "Share this network over the Internet, with a link or a code: MacArch and MacBeeb users can join")
         }
         ToolbarItemGroup {
             Button { session.powerOnAll() } label: { Label("Power On All", systemImage: "power") }

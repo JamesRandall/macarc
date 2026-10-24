@@ -25,6 +25,9 @@ struct NetworkProject: Codable, Equatable {
     /// the demo's programs when Level 4's set up, and the studio shows
     /// the demo's own view.
     var demo: NetworkDemo?
+    /// The Internet Econet room it's in, if any (nothing secret: the
+    /// credentials are in the Keychain).
+    var internetRoom: InternetRoomLink?
 
     init(name: String, nodes: [NetworkNode] = []) {
         self.name = name

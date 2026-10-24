@@ -40,6 +40,8 @@ final class NetworkHost: @unchecked Sendable {
         case add(UUID, EmulatorHost)
         case remove(UUID)
         case setClock(Int?)
+        case attach(EconetLineDevice)
+        case detach(EconetLineDevice)
     }
 
     private let lock = NSLock()
@@ -98,6 +100,15 @@ final class NetworkHost: @unchecked Sendable {
     /// The Econet's clock rate (nil takes it away).
     func setClock(_ rate: Int?) {
         lock.withLock { commands.append(.setClock(rate)); attention = true }
+    }
+
+    /// Puts a device (an Internet gateway) on the line, from the next quantum.
+    func attach(device: EconetLineDevice) {
+        lock.withLock { commands.append(.attach(device)); attention = true }
+    }
+
+    func detach(device: EconetLineDevice) {
+        lock.withLock { commands.append(.detach(device)); attention = true }
     }
 
     /// Pauses every station together: no emulated time passes anywhere,
@@ -179,6 +190,10 @@ final class NetworkHost: @unchecked Sendable {
                 stations.removeAll { $0.id == id }
             case .setClock(let rate):
                 line.clockRate = rate
+            case .attach(let device):
+                line.attach(device: device)
+            case .detach(let device):
+                line.detach(device: device)
             }
         }
         ready.removeAll(keepingCapacity: true)

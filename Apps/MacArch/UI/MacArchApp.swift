@@ -157,6 +157,8 @@ struct MacArchApp: App {
 
         Window("New Network", id: NetworkStartView.windowID) { NetworkStartView() }
             .windowResizability(.contentSize)
+        Window("Join Econet Network", id: JoinRoomView.windowID) { JoinRoomView() }
+            .windowResizability(.contentSize)
 
         WindowGroup("Debugger", id: "debugger", for: UUID.self) { $id in
             if let id, let machine = MachineController.all[id] {
@@ -320,6 +322,12 @@ struct MachineWindow: View {
             .onReceive(NotificationCenter.default.publisher(for: NetworkStudioCommands.openRequest)) { note in
                 if let url = note.object as? URL { NetworkStudioCommands.open(url, openWindow: openWindow) }
             }
+            // An invitation link (macarch://join…) from its web page.
+            .onOpenURL { url in
+                guard JoinRequests.isJoinLink(url) else { return }
+                JoinRequests.shared.handle(url)
+                openWindow(id: JoinRoomView.windowID)
+            }
     }
 }
 
@@ -368,6 +376,7 @@ struct MachineScreen: View {
             return machine.open(url)
         }
         .onOpenURL { url in
+            if JoinRequests.isJoinLink(url) { return } // (the window's own handler joins)
             if url.pathExtension.lowercased() == NetworkPackage.fileExtension {
                 NetworkStudioCommands.open(url, openWindow: openWindow)
             } else {

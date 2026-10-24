@@ -19,6 +19,14 @@
     <key>SUFeedURL</key><string>https://github.com/JamesRandall/macarc/releases/latest/download/appcast.xml</string>
     <key>SUEnableAutomaticChecks</key><true/>
     <key>NSHumanReadableCopyright</key><string>RISC OS ROMs are not included; use images you own.</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key><string>Internet Econet invitation</string>
+            <key>CFBundleURLSchemes</key>
+            <array><string>macarch</string></array>
+        </dict>
+    </array>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
