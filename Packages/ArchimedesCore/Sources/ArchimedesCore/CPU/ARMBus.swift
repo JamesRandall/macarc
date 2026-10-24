@@ -24,12 +24,15 @@ public protocol ARMBus: AnyObject {
 
     /// Ticks per internal (I) cycle at the processor's current clock.
     var iCycle: UInt64 { get }
+    /// Charges `n` internal (I) cycles.
+    func internalCycles(_ n: UInt64)
     /// The ARM3 cache's enable bit (CP15 register 2) changed.
     func cacheControlChanged()
 }
 
 extension ARMBus {
     public var iCycle: UInt64 { MasterClock.iCycle }
+    public func internalCycles(_ n: UInt64) { ticks &+= n &* iCycle }
     public func cacheControlChanged() {}
 }
 

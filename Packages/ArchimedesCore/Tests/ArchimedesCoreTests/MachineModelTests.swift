@@ -117,6 +117,92 @@ final class MachineModelTests: XCTestCase {
         XCTAssertEqual(m.cpu.exceptionCounts[5], 0)
     }
 
+    /// Both ROMs on each A540 memory size. RISC OS 3.11 finds and maps it
+    /// all. RISC OS 2.00 (the A540 shipped with 2.01) only ever programs
+    /// the master and first slave (A7), never A12's two, so it stops at
+    /// 8 MB; and over 4 MB its Window Manager 2.00 gives up with "Too many
+    /// pages in this machine!", whose error path then unstacks from a
+    /// workspace word ("TASK") and takes an address exception. That's the
+    /// ROM, not the emulation.
+    func testA540MemorySizesBothROMs() throws {
+        for romName in ["riscos2_00", "riscos3_11"] {
+            for kb in [4096, 8192, 16384] {
+                var c = MachineConfiguration(model: .a540)
+                c.ramKB = kb
+                c.romPaths = [try rom(romName)]
+                c.powerOnKeys = [0x34]
+                let m = try Machine(configuration: c)
+                m.powerOn()
+                m.run(seconds: 25)
+                let found = romName == "riscos2_00" ? min(kb, 8192) : kb
+                XCTAssertTrue(m.recentText.contains("RISC OS \(found)K"), "\(romName) \(kb)K: " + m.recentText.suffix(200).description)
+                XCTAssertEqual(m.memc.mappedPages.mapped, found / 32, "\(romName) \(kb)K: pages mapped")
+                let wimpGivesUp = romName == "riscos2_00" && kb > 4096
+                XCTAssertEqual(m.cpu.exceptionCounts[5], wimpGivesUp ? 1 : 0, "\(romName) \(kb)K: address exceptions")
+            }
+        }
+    }
+
+    /// A first boot holds Delete to reset CMOS, and RISC OS only looks
+    /// after clearing memory: an 8 or 16 MB A540 must still get the reset,
+    /// and so start the desktop in colour (not the Supervisor prompt and
+    /// mode 0, as an empty CMOS gives).
+    func testA540FirstBootResetsCMOS() throws {
+        for kb in [8192, 16384] {
+            var c = MachineConfiguration(model: .a540)
+            c.ramKB = kb
+            c.romPaths = [try rom("riscos3_11")]
+            c.powerOnKeys = [0x34]
+            let m = try Machine(configuration: c)
+            XCTAssertTrue(Machine.cmosNeverConfigured(m.cmos))
+            m.powerOn()
+            m.run(seconds: 30)
+            XCTAssertFalse(Machine.cmosNeverConfigured(m.cmos), "\(kb)K: CMOS reset")
+            XCTAssertFalse(m.recentText.contains("Supervisor"), "\(kb)K: the desktop starts")
+            XCTAssertTrue(m.recentText.contains("Apps"), "\(kb)K: the desktop starts")
+        }
+    }
+
+    /// The A540's MEMCs, from the databook and the A540's decoding: A7 and
+    /// A12 choose the MEMC a CAM write programs (at any page size), each
+    /// MEMC's pages lie in its own 4 MB, and a MEMC that isn't fitted
+    /// neither takes CAM writes nor answers physical accesses.
+    func testA540SlaveMEMCs() {
+        let m = MEMC(ramSize: 8 << 20, rom: [UInt8](repeating: 0, count: 4), slaveMEMCs: true)
+        XCTAssertEqual(m.memcCount, 2)
+        m.privileged = true
+        _ = m.readWord(0x0380_0000, sequential: false) // leave the reset overlay
+        m.writeWord(0x0240_0000, 0x5151_5151, sequential: false) // first slave's DRAM
+        m.writeWord(0x0200_0000, 0x4D4D_4D4D, sequential: false) // master's
+        m.setPageSize(3)
+        // Physical page 0, logical page 1 (&8000), for the first slave (A7).
+        m.writeCAM(0x0380_0000 | 1 << 15 | 1 << 7)
+        XCTAssertEqual(m.readWord(0x8000, sequential: false), 0x5151_5151)
+        XCTAssertFalse(m.abort)
+        // Logical page 2 for the second slave (A12), which isn't fitted.
+        m.writeCAM(0x0380_0000 | 2 << 15 | 1 << 12)
+        _ = m.readWord(0x1_0000, sequential: false)
+        XCTAssertTrue(m.abort, "no MEMC maps it")
+        m.abort = false
+        // Nothing answers the second slave's physical space.
+        XCTAssertEqual(m.readWord(0x0280_0000, sequential: false), 0xFFFF_FFFF)
+        XCTAssertEqual(m.readByte(0x0280_0001), 0xFF)
+        m.writeWord(0x0280_0000, 0x1234_5678, sequential: false)
+        XCTAssertEqual(m.readWord(0x0200_0000, sequential: false), 0x4D4D_4D4D, "the write went nowhere")
+        // With 4 KB pages A7 still chooses the slave.
+        m.setPageSize(0)
+        // (an even logical page: with 4 KB pages A12 is also its lowest bit)
+        m.writeCAM(0x0380_0000 | 2 << 12 | 1 << 7)
+        XCTAssertEqual(m.readWord(0x2000, sequential: false), 0x5151_5151)
+
+        // One MEMC ignores A22 and up: its physical space repeats.
+        let single = MEMC(ramSize: 4 << 20, rom: [UInt8](repeating: 0, count: 4))
+        single.privileged = true
+        _ = single.readWord(0x0380_0000, sequential: false)
+        single.writeWord(0x0200_0000, 0x0102_0304, sequential: false)
+        XCTAssertEqual(single.readWord(0x0240_0000, sequential: false), 0x0102_0304)
+    }
+
     /// RISC OS 3.11 finds the ARM3 and turns its cache on, and the same
     /// BASIC loop then runs several times faster than on an ARM2.
     func testARM3CacheOnAndFaster() throws {
@@ -141,6 +227,44 @@ final class MachineModelTests: XCTestCase {
         XCTAssertGreaterThan(arm2, 0); XCTAssertGreaterThan(arm3, 0)
         let ratio = Double(arm2) / Double(arm3)
         XCTAssertTrue((3.0...6.0).contains(ratio), "ARM3 speed-up \(ratio) (ARM2 \(arm2) cs, ARM3 \(arm3) cs)")
+    }
+
+    /// The turbo ARM3s run the same loop faster (by less than their clock
+    /// ratio, as memory doesn't speed up), while the machine's clock keeps
+    /// real time: ten seconds of emulation is still about 1000 centiseconds
+    /// to RISC OS.
+    func testTurboARM3IsFasterButKeepsRealTime() throws {
+        func measure(_ cpu: CPUType) throws -> (loop: Int, tenSeconds: Int) {
+            var c = MachineConfiguration(model: .a3000)
+            c.cpu = cpu
+            c.romPaths = [try rom("riscos3_11")]
+            c.powerOnKeys = [0x34]
+            let m = try Machine(configuration: c)
+            m.powerOn()
+            m.run(seconds: 20)
+            m.keyDown(0x0C); m.run(seconds: 0.1); m.keyUp(0x0C) // F12: command line
+            m.run(seconds: 1)
+            m.scheduleTyping("*BASIC\nT%=TIME:FOR I%=1 TO 50000:A%=I% AND 7:NEXT:PRINT \"T=\";STR$(TIME-T%)\n", intervalMs: 40)
+            m.run(seconds: 30)
+            m.scheduleTyping("S%=TIME\n", intervalMs: 40)
+            m.run(seconds: 10)
+            m.scheduleTyping("PRINT \"S=\";STR$(TIME-S%)\n", intervalMs: 40)
+            m.run(seconds: 3)
+            let lines = m.recentText.components(separatedBy: "\n")
+            func value(_ p: String) -> Int { Int(lines.last { $0.hasPrefix(p) }?.dropFirst(2) ?? "") ?? -1 }
+            return (value("T="), value("S="))
+        }
+        let base = try measure(.arm3), x2 = try measure(.arm3x2), x4 = try measure(.arm3x4)
+        XCTAssertTrue((1000...1250).contains(base.tenSeconds), "10 s and some typing: \(base.tenSeconds) cs")
+        for r in [base, x2, x4] {
+            XCTAssertGreaterThan(r.loop, 0)
+            // About 10 s, plus typing the PRINT: the same whatever the processor.
+            XCTAssertEqual(Double(r.tenSeconds), Double(base.tenSeconds), accuracy: 3, "RISC OS's clock keeps real time")
+        }
+        let r2 = Double(base.loop) / Double(x2.loop), r4 = Double(base.loop) / Double(x4.loop)
+        // Less than the clock ratio: writes and cache misses run at memory speed.
+        XCTAssertTrue((1.5...2.0).contains(r2), "×2 speed-up \(r2) (\(base.loop) cs, \(x2.loop) cs)")
+        XCTAssertTrue((2.2...4.0).contains(r4), "×4 speed-up \(r4) (\(base.loop) cs, \(x4.loop) cs)")
     }
 }
 
@@ -311,12 +435,17 @@ final class ModelSnapshotTests: XCTestCase {
     /// An ARM3 A440 with a hard disc, mid-way through disc activity,
     /// restores from a snapshot and runs on exactly as the original does.
     func testARM3A440SnapshotIsDeterministic() throws {
+        // The turbo ARM3 also carries a fraction of a tick between snapshots.
+        for cpu in [CPUType.arm3, .arm3x4] { try snapshotIsDeterministic(cpu) }
+    }
+
+    func snapshotIsDeterministic(_ cpu: CPUType) throws {
         guard let dir = GameSmokeTests.romDir("riscos3_11") else { throw XCTSkip("RISC OS 3.11 ROM not present") }
         let path = NSTemporaryDirectory() + "macarch-snap-\(UUID().uuidString).hdf"
         defer { try? FileManager.default.removeItem(atPath: path) }
         try ADFSFormatter.createFormattedImage(path: path, geometry: HardDiscGeometry(cylinders: 615, heads: 4), name: "Snap")
         var c = MachineConfiguration(model: .a440)
-        c.cpu = .arm3
+        c.cpu = cpu
         c.romPaths = [dir]
         c.hardDiscs = [path]
         c.powerOnKeys = [0x34]

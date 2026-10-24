@@ -12,8 +12,10 @@ struct MachineToolbar: CustomizableToolbarContent {
                 HardwarePickers(machine: machine)
             } label: {
                 Label("Model", systemImage: "desktopcomputer")
+            } primaryAction: {
+                machine.configureRequested = true
             }
-            .help("Choose the machine (power cycles)")
+            .help("Configure the machine; hold for a quick menu")
         }
 
         ToolbarItem(id: "disc") {

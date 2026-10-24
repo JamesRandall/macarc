@@ -28,7 +28,7 @@ func fail(_ msg: String, code: Int32) -> Never {
 
 var args = Array(CommandLine.arguments.dropFirst())
 guard let command = args.first else {
-    fail("usage: macarch-cli run|assemble|disk-inspect|rom-info|manifest|snapshot-info|hard-disc-create|hard-disc-add ...", code: 1)
+    fail("usage: macarch-cli run|assemble|disk-inspect|rom-info|manifest|snapshot-info|hard-disc-create|hard-disc-add|hard-disc-resize|hard-disc-copy ...", code: 1)
 }
 args.removeFirst()
 
@@ -130,6 +130,31 @@ case "hard-disc-add":
                            "directoriesMade": s.directoriesMade.joined(separator: " "), "bytesFree": String(s.bytesFree),
                            "bytesMoved": String(s.bytesMoved)]))
     } catch { fail("\(error)", code: 3) }
+
+case "hard-disc-resize":
+    // hard-disc-resize <file> <cylinders> <heads> [sectors] [--compact]: a new size for an old-map drive,
+    // keeping its sector size (--compact closes up the gaps first when shrinking)
+    let nums = args.dropFirst().compactMap { Int($0) }
+    guard let p = args.first, nums.count >= 2 else { fail("hard-disc-resize <file> <cylinders> <heads> [sectors] [--compact]", code: 1) }
+    do {
+        let current = try ADFSHardDiscWriter.usage(path: p).geometry
+        let g = HardDiscGeometry(cylinders: nums[0], heads: nums[1], sectorsPerTrack: nums.count > 2 ? nums[2] : current.sectorsPerTrack,
+                                 sectorSize: current.sectorSize)
+        let u = try ADFSHardDiscWriter.resize(path: p, to: g, compact: flag("--compact"))
+        print(JSON.encode(["size": String(u.size), "bytesFree": String(u.bytesFree)]))
+    } catch { fail("\(error)", code: 3) }
+
+case "hard-disc-copy":
+    // hard-disc-copy <source> <destination> [cylinders heads [sectors]] [--ide]: the source drive's files,
+    // directories and name on a new drive (ST506 by default, IDE with --ide; sizes as hard-disc-create)
+    guard args.count >= 2 else { fail("hard-disc-copy <source> <destination> [cylinders heads [sectors]] [--ide]", code: 1) }
+    let ide = flag("--ide")
+    let nums = args.dropFirst(2).compactMap { Int($0) }
+    let g = ide ? HardDiscGeometry(cylinders: nums.count > 0 ? nums[0] : 977, heads: nums.count > 1 ? nums[1] : 5,
+                                   sectorsPerTrack: nums.count > 2 ? nums[2] : 17, sectorSize: 512)
+                : HardDiscGeometry(cylinders: nums.count > 0 ? nums[0] : 615, heads: nums.count > 1 ? nums[1] : 4)
+    do { try ADFSHardDiscWriter.copy(from: args[0], to: args[1], geometry: g) } catch { fail("\(error)", code: 3) }
+    print(args[1])
 
 case "rom-info":
     do {

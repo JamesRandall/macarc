@@ -49,6 +49,8 @@ final class MachineController {
     @ObservationIgnored private(set) lazy var debugger = DebuggerModel(machine: self)
     /// Set when the debugger stops the machine, so its window opens.
     var debuggerRequested = false
+    /// Set to open the Configure Machine window (from the toolbar).
+    var configureRequested = false
     /// Why the debugger has stopped the machine, if it has.
     private(set) var debugStop: String?
     @ObservationIgnored private var debugStopCount = 0
@@ -86,10 +88,12 @@ final class MachineController {
         c.monitorType = hw.monitor
         c.romPaths = [hw.romPath]
         c.hardDiscs = hw.hardDiscs
-        if FileManager.default.fileExists(atPath: cmos) {
+        // First boot, or a CMOS RISC OS never set up (as a 16 MB A540's was
+        // when Delete was let go too soon): Delete held resets it to defaults.
+        if let d = FileManager.default.contents(atPath: cmos), !Machine.cmosNeverConfigured([UInt8](d)) {
             c.cmosPath = cmos
         } else {
-            c.powerOnKeys = [0x34] // first boot: Delete held resets CMOS to defaults
+            c.powerOnKeys = [0x34]
         }
         return c
     }
@@ -424,11 +428,47 @@ final class MachineController {
             alert("\(url.lastPathComponent) is in use", "Another window's machine has this hard disc fitted. Remove it there first.")
             return
         }
+        if let other = try? ADFSHardDiscWriter.usage(path: url.path), other.geometry.sectorSize != model.hardDiscSectorSize {
+            if let copy = offerCopyForThisMachine(url, usage: other) { fitHardDisc(copy.path, drive: drive) }
+            return
+        }
         do { _ = try HardDiscImage.open(path: url.path, sectorSize: model.hardDiscSectorSize) } catch {
             alert("Could not use \(url.lastPathComponent)", "\(error)")
             return
         }
         fitHardDisc(url.path, drive: drive)
+    }
+
+    /// An ST506 drive on an IDE machine, or the other way round: the sector
+    /// sizes differ, so offer a copy of its files on a new drive of the
+    /// right kind, beside it. Returns the copy.
+    private func offerCopyForThisMachine(_ url: URL, usage: ADFSHardDiscWriter.Usage) -> URL? {
+        let (kind, other) = model.hasIDE ? ("IDE", "ST506") : ("ST506", "IDE")
+        let presets = model.hasIDE ? HardDiscGeometry.idePresets : HardDiscGeometry.presets
+        let needed = usage.compactedEnd + 0x10000
+        guard let geometry = presets.first(where: { $0.geometry.byteCount >= needed })?.geometry else {
+            alert("\(url.lastPathComponent) is an \(other) drive", "The \(model.displayName) takes \(kind) drives, and its files (\(needed / 1_048_576) MB) are too big for the largest \(kind) drive MacArch makes.")
+            return nil
+        }
+        let base = url.deletingPathExtension().lastPathComponent
+        var copy = url.deletingLastPathComponent().appendingPathComponent("\(base) (\(kind)).hdf")
+        var n = 2
+        while FileManager.default.fileExists(atPath: copy.path) {
+            copy = url.deletingLastPathComponent().appendingPathComponent("\(base) (\(kind) \(n)).hdf")
+            n += 1
+        }
+        let a = NSAlert()
+        a.messageText = "\(url.lastPathComponent) is an \(other) drive"
+        a.informativeText = "The \(model.displayName) takes \(kind) drives, which have a different sector size. MacArch can copy its files onto a new \(Int(geometry.megabytes.rounded())) MB \(kind) drive, \"\(copy.lastPathComponent)\", and fit that instead. The original is left as it is."
+        a.addButton(withTitle: "Make \(kind) Copy")
+        a.addButton(withTitle: "Cancel")
+        guard a.runModal() == .alertFirstButtonReturn else { return nil }
+        do { try ADFSHardDiscWriter.copy(from: url.path, to: copy.path, geometry: geometry) } catch {
+            try? FileManager.default.removeItem(at: copy)
+            alert("Could not copy \(url.lastPathComponent)", "\(error)")
+            return nil
+        }
+        return copy
     }
 
     /// Asks where to save a new image and how big a drive it is (the
@@ -471,7 +511,7 @@ final class MachineController {
         open.canChooseFiles = true
         open.allowsMultipleSelection = true
         open.allowedContentTypes = [.zip, .folder]
-        open.message = message + " Filetypes come from the archives' RISC OS information, or from \",xxx\" suffixes on names."
+        open.message = message
         open.prompt = "Choose"
         return open.runModal() == .OK ? open.urls : []
     }
@@ -496,7 +536,7 @@ final class MachineController {
     /// Creates a hard disc holding the files from ZIP archives or folders
     /// (software that came as files rather than discs), and fits it.
     func newHardDiscFromFiles(drive: Int, sources given: [URL]? = nil) {
-        let sources = given ?? chooseFileSources("Choose ZIP archives or folders of RISC OS files to copy onto a new hard disc for drive \(drive + 4).")
+        let sources = given ?? chooseFileSources("Files for a new hard disc")
         guard !sources.isEmpty, let items = items(from: sources) else { return }
         let needed = items.reduce(0x10000) { $0 + $1.data.count + 2048 }
         guard let (url, geometry) = chooseNewHardDisc(drive: drive, message: "A new hard disc holding the \(items.count) files from \(Self.describe(sources)), for drive \(drive + 4). The machine will be power cycled.", minimumBytes: needed) else { return }
@@ -516,7 +556,7 @@ final class MachineController {
     func addFilesToHardDisc(drive: Int, sources given: [URL]? = nil) {
         guard hardDiscs.indices.contains(drive), let path = hardDiscs[drive] else { return }
         let name = (path as NSString).lastPathComponent
-        let sources = given ?? chooseFileSources("Choose ZIP archives or folders of RISC OS files to add to \(name) (drive \(drive + 4)).")
+        let sources = given ?? chooseFileSources("Add to \(name)")
         guard !sources.isEmpty, let items = items(from: sources) else { return }
         var plan: ADFSHardDiscWriter.Summary
         var compact = false
@@ -554,6 +594,61 @@ final class MachineController {
         do { try ADFSHardDiscWriter.add(path: path, items: items, compact: compact) } catch {
             host?.sendAndWait { s in s.machine.hdc?.drives.forEach { $0?.suppressWrites = false } }
             alert("Could not add the files to \(name)", "\(error)")
+            return
+        }
+        setHardware(hardDiscs: hardDiscs, reload: true)
+    }
+
+    /// Makes the drive's disc bigger or smaller, choosing from the sizes New
+    /// Hard Disc offers (power cycles). Shrinking offers to compact first
+    /// when files lie past the new end.
+    func resizeHardDisc(drive: Int) {
+        guard hardDiscs.indices.contains(drive), let path = hardDiscs[drive] else { return }
+        let name = (path as NSString).lastPathComponent
+        guard !inUseElsewhere(path) else {
+            alert("\(name) is in use", "Another window's machine has this hard disc fitted. Remove it there first.")
+            return
+        }
+        syncHardDiscs()
+        let usage: ADFSHardDiscWriter.Usage
+        do { usage = try ADFSHardDiscWriter.usage(path: path) } catch {
+            alert("Could not resize \(name)", "\(error)")
+            return
+        }
+        func mb(_ n: Int) -> String { String(format: "%.1f MB", Double(n) / 1_048_576) }
+        let presets = (usage.geometry.sectorSize == 256 ? HardDiscGeometry.presets : HardDiscGeometry.idePresets)
+            .filter { $0.geometry != usage.geometry }
+        let a = NSAlert()
+        a.messageText = "Resize \(name)"
+        a.informativeText = "It's \(mb(usage.size)), with \(mb(usage.size - usage.bytesFree)) in use. Files stay where they are; the machine will be restarted."
+        let sizes = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 360, height: 26), pullsDown: false)
+        sizes.addItems(withTitles: presets.map(\.name))
+        sizes.selectItem(at: presets.firstIndex { $0.geometry.byteCount > usage.size } ?? 0)
+        a.accessoryView = sizes
+        a.addButton(withTitle: "Resize")
+        a.addButton(withTitle: "Cancel")
+        guard !presets.isEmpty, a.runModal() == .alertFirstButtonReturn else { return }
+        let target = presets[max(0, sizes.indexOfSelectedItem)].geometry
+
+        var compact = false
+        if target.byteCount < usage.usedEnd {
+            guard usage.compactedEnd <= target.byteCount else {
+                alert("\(name) won't fit in \(mb(target.byteCount))", "Its files need \(mb(usage.compactedEnd)) even when compacted.")
+                return
+            }
+            let c = NSAlert()
+            c.messageText = "Compact \(name) first?"
+            c.informativeText = "Files reach \(mb(usage.usedEnd)) into the drive. Compacting it, as *Compact does, moves them together so they fit in \(mb(target.byteCount))."
+            c.addButton(withTitle: "Compact and Resize")
+            c.addButton(withTitle: "Cancel")
+            guard c.runModal() == .alertFirstButtonReturn else { return }
+            compact = true
+        }
+        // Stop the running machine writing to the drive behind the change.
+        host?.sendAndWait { s in s.machine.hdc?.drives.forEach { $0?.synchronize(); $0?.suppressWrites = true } }
+        do { try ADFSHardDiscWriter.resize(path: path, to: target, compact: compact) } catch {
+            host?.sendAndWait { s in s.machine.hdc?.drives.forEach { $0?.suppressWrites = false } }
+            alert("Could not resize \(name)", "\(error)")
             return
         }
         setHardware(hardDiscs: hardDiscs, reload: true)

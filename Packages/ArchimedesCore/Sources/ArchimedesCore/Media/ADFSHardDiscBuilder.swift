@@ -63,8 +63,8 @@ public enum ADFSHardDiscBuilder {
     }
 
     /// Creates `path` with the files in `items` on a freshly formatted drive.
-    public static func create(path: String, geometry: HardDiscGeometry, name: String, items: [Item]) throws {
-        let image = try build(geometry: geometry, name: name, items: items)
+    public static func create(path: String, geometry: HardDiscGeometry, name: String, items: [Item], directories: [[String]] = []) throws {
+        let image = try build(geometry: geometry, name: name, items: items, directories: directories)
         let img = try HardDiscImage.create(path: path, geometry: geometry)
         let size = geometry.sectorSize, g = geometry
         for start in stride(from: 0, to: image.count, by: size) {
@@ -78,16 +78,17 @@ public enum ADFSHardDiscBuilder {
     }
 
     /// The used part of the drive (everything after it is zero).
-    public static func build(geometry g: HardDiscGeometry, name: String, items: [Item]) throws -> [UInt8] {
+    /// `directories` adds directories that may be empty.
+    public static func build(geometry g: HardDiscGeometry, name: String, items: [Item], directories: [[String]] = []) throws -> [UInt8] {
         let root = Node(name: "$")
-        for item in items {
+        for (path, item) in items.map({ ($0.path, Optional($0)) }) + directories.map({ ($0, nil) }) {
             var dir = root
-            for (i, component) in item.path.enumerated() {
+            for (i, component) in path.enumerated() {
                 guard isValidName(component) else { throw BuildError.badName(component) }
                 let key = component.uppercased()
-                let last = i == item.path.count - 1
+                let last = i == path.count - 1 && item != nil
                 if let existing = dir.children[key] {
-                    if last || !existing.isDirectory { throw BuildError.conflict(item.path.prefix(i + 1).joined(separator: ".")) }
+                    if last || !existing.isDirectory { throw BuildError.conflict(path.prefix(i + 1).joined(separator: ".")) }
                     dir = existing
                 } else {
                     let node = Node(name: component, item: last ? item : nil)

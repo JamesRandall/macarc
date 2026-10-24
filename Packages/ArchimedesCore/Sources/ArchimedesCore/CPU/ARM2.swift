@@ -245,7 +245,7 @@ public final class ARM2<Bus: ARMBus> {
         if vector == .fiq || vector == .reset { psr |= Self.flagF }
         pc = vector.rawValue
         sequentialFetch = false
-        bus.ticks &+= 2 * bus.iCycle
+        bus.internalCycles(2)
     }
 
     // MARK: - Execution
@@ -487,7 +487,7 @@ public final class ARM2<Bus: ARMBus> {
                 (op2, shc) = shiftImmediate(v, type: type, amount: (i >> 7) & 0x1F)
                 a = rn == 15 ? (pc &+ 4) & Self.pcMask : r[rn]
             } else {
-                bus.ticks &+= bus.iCycle
+                bus.internalCycles(1)
                 let rs = Int((i >> 8) & 0xF)
                 let amount = (rs == 15 ? (pc &+ 8) : r[rs]) & 0xFF
                 let v = rm == 15 ? ((pc &+ 8) & Self.pcMask) | psr : r[rm]
@@ -589,7 +589,7 @@ public final class ARM2<Bus: ARMBus> {
         var cycles: UInt64 = 1
         var t = sVal >> 2
         while t != 0 && cycles < 16 { cycles += 1; t >>= 2 }
-        bus.ticks &+= cycles * bus.iCycle
+        bus.internalCycles(cycles)
         if rd != 15 { r[rd] = result }
         if i & 0x0010_0000 != 0 { setNZ(result) } // C becomes meaningless on ARM2; left unchanged.
     }
@@ -637,7 +637,7 @@ public final class ARM2<Bus: ARMBus> {
                 if rot != 0 { value = (value >> rot) | (value << (32 - rot)) }
             }
             if forceUser { bus.privileged = true }
-            bus.ticks &+= bus.iCycle
+            bus.internalCycles(1)
             if bus.abort {
                 bus.abort = false
                 exception(.dataAbort, returnAddress: pc &+ 4)
@@ -708,7 +708,7 @@ public final class ARM2<Bus: ARMBus> {
             exception(.dataAbort, returnAddress: pc &+ 4)
             return
         }
-        bus.ticks &+= bus.iCycle
+        bus.internalCycles(1)
         if rd != 15 { r[rd] = value }
     }
 
@@ -724,7 +724,7 @@ public final class ARM2<Bus: ARMBus> {
             c.write(n, rd == 15 ? r15 &+ 4 : r[rd])
             if n == 2 { bus.cacheControlChanged() }
         }
-        bus.ticks &+= bus.iCycle
+        bus.internalCycles(1)
     }
 
     // MARK: Block data transfer
@@ -786,7 +786,7 @@ public final class ARM2<Bus: ARMBus> {
                 }
                 address &+= 4
             }
-            bus.ticks &+= bus.iCycle
+            bus.internalCycles(1)
             if aborted {
                 // Base is restored to its written-back value after an abort.
                 r[rn] = writeBack ? newBase : base

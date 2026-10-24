@@ -69,13 +69,14 @@ public enum MachineModel: String, CaseIterable, Codable, Sendable {
     /// Processors that fit: the ARM2 machines took third-party ARM3 cards.
     public var cpuChoices: [CPUType] {
         switch self {
-        case .a540, .a5000: [.arm3]
+        case .a540, .a5000: [.arm3, .arm3x2, .arm3x4]
         case .a3010, .a3020, .a4000: [.arm250]
-        default: [.arm2, .arm3]
+        default: [.arm2, .arm3, .arm3x2, .arm3x4]
         }
     }
 
-    public var defaultCPU: CPUType { cpuChoices.count == 1 ? cpuChoices[0] : .arm2 }
+    /// What Acorn fitted: an ARM2 where there's a choice, else the first.
+    public var defaultCPU: CPUType { cpuChoices.contains(.arm2) ? .arm2 : cpuChoices[0] }
 
     /// The 400 series has an HD63463 ST506 controller on the I/O backplane.
     public var hasST506: Bool { self == .a410 || self == .a420 || self == .a440 }
@@ -94,12 +95,22 @@ public enum CPUType: String, CaseIterable, Codable, Sendable {
     case arm2 = "ARM2"
     case arm3 = "ARM3"
     case arm250 = "ARM250"
+    /// Faster than any real ARM3, for games that wanted a RiscPC: only the
+    /// processor speeds up; see `MEMC.turboShift`.
+    case arm3x2 = "ARM3x2"
+    case arm3x4 = "ARM3x4"
+
+    /// An ARM3 (with its cache), at any speed.
+    public var isARM3: Bool { self == .arm3 || self == .arm3x2 || self == .arm3x4 }
+    public var turboShift: UInt64 { self == .arm3x2 ? 1 : self == .arm3x4 ? 2 : 0 }
 
     public var displayName: String {
         switch self {
         case .arm2: "ARM2 (8 MHz)"
         case .arm3: "ARM3 (24 MHz, 4 KB cache)"
         case .arm250: "ARM250 (12 MHz)"
+        case .arm3x2: "ARM3 ×2 (48 MHz, faster than real)"
+        case .arm3x4: "ARM3 ×4 (96 MHz, faster than real)"
         }
     }
 }

@@ -29,8 +29,24 @@ public final class MEMC: ARMBus {
     /// 24-25 PPL, bit 26 valid.
     let pageTable: UnsafeMutablePointer<UInt32>
     /// Raw CAM write addresses, indexed by physical page number (or 0xFFFFFFFF).
-    /// 128 per MEMC; machines with more than 4 MB have slave MEMCs.
+    /// 128 per MEMC: the master's first, then each slave's.
     var camEntries: [UInt32]
+    /// The A540's arrangement: a master MEMC and up to three slaves, each
+    /// with its own 4 MB and its own 128-entry CAM. MEMC's databook (VLSI
+    /// VL86C110: "Dual MEMC Systems") has A7 choose between master and
+    /// slave translators when they're programmed; the A540's decoding PAL
+    /// extends that to four with A7 and A12, whatever the page size (it
+    /// can't know it). A physical address's bits 22 and 23 choose which
+    /// MEMC's DRAM answers. A CAM write for a MEMC that isn't fitted is
+    /// lost. A physical read with no MEMC behind it reads &FF, as
+    /// Arculator has it (nothing drives the data bus; the hardware
+    /// references don't say). Lookups compare every MEMC's entries and the
+    /// MEMCs' aborts are ANDed, so a logical page aborts only when no MEMC
+    /// maps it. Other machines have one MEMC, which ignores those bits, so
+    /// their physical space repeats every 4 MB or less.
+    public let slaveMEMCs: Bool
+    /// MEMCs fitted (1 to 4).
+    public let memcCount: Int
     /// Write order of each CAM entry; the most recent match wins.
     var camSequence: [UInt64]
     var camCounter: UInt64 = 0
@@ -83,12 +99,14 @@ public final class MEMC: ARMBus {
     public var cache: ARM3Cache? { didSet { cacheControlChanged() } }
     var cacheOn = false
 
-    public init(ramSize: Int, rom: [UInt8], memoryClockMHz: Int = 8) {
+    public init(ramSize: Int, rom: [UInt8], memoryClockMHz: Int = 8, slaveMEMCs: Bool = false) {
         precondition(ramSize.nonzeroBitCount == 1, "RAM size must be a power of two")
         self.ramSize = ramSize
+        self.slaveMEMCs = slaveMEMCs
+        memcCount = slaveMEMCs ? max(1, ramSize >> 22) : 1
         sCycle = UInt64(24 / memoryClockMHz)
         nCycle = 2 * sCycle
-        let pages = max(128, ramSize / 32768)
+        let pages = 128 * memcCount
         camEntries = [UInt32](repeating: .max, count: pages)
         camSequence = [UInt64](repeating: 0, count: pages)
         iCycle = sCycle
@@ -182,6 +200,7 @@ public final class MEMC: ARMBus {
         if a < 0x0300_0000 {
             ticks &+= sequential ? sCycle : nCycle
             if !privileged { abort = true; return 0 }
+            guard physicalFitted(a) else { return 0xFFFF_FFFF }
             return ramWordPointer(physicalOffset(a)).load(as: UInt32.self)
         }
         if a < 0x0340_0000 {
@@ -217,6 +236,7 @@ public final class MEMC: ARMBus {
         if a < 0x0300_0000 {
             ticks &+= nCycle
             if !privileged { abort = true; return 0 }
+            guard physicalFitted(a) else { return 0xFF }
             return UInt32(ram[physicalOffset(a)])
         }
         if a < 0x0340_0000 {
@@ -255,6 +275,11 @@ public final class MEMC: ARMBus {
         }
         // The ARM2 drives a byte store onto all four byte lanes.
         writeSlow(a, UInt32(value) &* 0x0101_0101, sequential: false, byte: true)
+    }
+
+    /// Whether a MEMC answers a physical RAM address (always, without slaves).
+    @inline(__always) func physicalFitted(_ a: UInt32) -> Bool {
+        !slaveMEMCs || Int((a >> 22) & 3) < memcCount
     }
 
     /// Where a physically addressed access lands in RAM.
@@ -300,6 +325,25 @@ public final class MEMC: ARMBus {
         iCycle = cacheOn ? 1 : sCycle
     }
 
+    /// A faster ARM3 than Acorn fitted (2^`turboShift` times 24 MHz):
+    /// cycles at the processor clock (cache hits and internal cycles, with
+    /// the cache on) cost a fraction of a tick, carried in `subTicks` so
+    /// the total stays exact and deterministic. Memory, I/O and every
+    /// other device keep their real speeds, so games' timers do too.
+    public var turboShift: UInt64 = 0
+    var subTicks: UInt64 = 0
+
+    @inline(__always) func processorCycles(_ n: UInt64) {
+        if turboShift == 0 { ticks &+= n; return }
+        subTicks &+= n
+        ticks &+= subTicks >> turboShift
+        subTicks &= (1 << turboShift) - 1
+    }
+
+    public func internalCycles(_ n: UInt64) {
+        if cacheOn { processorCycles(n) } else { ticks &+= n &* sCycle }
+    }
+
     /// A cacheable read that hits costs one processor cycle; a miss fetches
     /// the 16-byte line (one N and three S memory cycles) and fills it.
     func readWordCached(_ address: UInt32, sequential: Bool) -> UInt32 {
@@ -327,7 +371,8 @@ public final class MEMC: ARMBus {
 
     @inline(__always) func cacheTiming(_ a: UInt32, start: UInt64, cache c: ARM3Cache) {
         if c.contains(a) {
-            ticks = start &+ 1
+            ticks = start
+            processorCycles(1)
         } else {
             let first = ticks &- start
             c.fill(a)
@@ -351,6 +396,7 @@ public final class MEMC: ARMBus {
         if a < 0x0300_0000 {
             ticks &+= sequential ? sCycle : nCycle
             if !privileged { abort = true; return }
+            guard physicalFitted(a) else { return }
             let off = physicalOffset(a)
             if writeWatch != nil { checkWatch(UInt32(off), value) }
             if byte { ram[off] = UInt8(truncatingIfNeeded: value) } else { ramWordPointer(off).storeBytes(of: value, as: UInt32.self) }
@@ -424,16 +470,19 @@ public final class MEMC: ARMBus {
         rebuildPageTable()
     }
 
-    func decodePPN(_ a: UInt32) -> Int {
+    /// The physical page a CAM write names, or nil when it's for a MEMC
+    /// that isn't fitted.
+    func decodePPN(_ a: UInt32) -> Int? {
+        let memc = slaveMEMCs ? Int(((a >> 7) & 1) | (((a >> 12) & 1) << 1)) : 0
+        guard memc < memcCount else { return nil }
+        let page: UInt32
         switch pageSizeCode {
-        case 0: return Int(a & 0x7F)
-        case 1: return Int(((a >> 1) & 0x3F) | ((a & 1) << 6))
-        case 2: return Int(((a >> 2) & 0x1F) | ((a & 3) << 5))
-        default:
-            // Bits 7 and 12 choose among up to four MEMCs (128 pages each).
-            let memc = camEntries.count > 128 ? ((a >> 7) & 1) | (((a >> 12) & 1) << 1) : 0
-            return Int(((a >> 3) & 0xF) | ((a & 1) << 4) | (((a >> 2) & 1) << 5) | (((a >> 1) & 1) << 6) | (memc << 7)) % camEntries.count
+        case 0: page = a & 0x7F
+        case 1: page = ((a >> 1) & 0x3F) | ((a & 1) << 6)
+        case 2: page = ((a >> 2) & 0x1F) | ((a & 3) << 5)
+        default: page = ((a >> 3) & 0xF) | ((a & 1) << 4) | (((a >> 2) & 1) << 5) | (((a >> 1) & 1) << 6)
         }
+        return Int(page) | memc << 7
     }
 
     func decodeLPN(_ a: UInt32) -> UInt32 {
@@ -446,7 +495,10 @@ public final class MEMC: ARMBus {
     public var pageWatchLog: [String] = []
 
     func writeCAM(_ a: UInt32) {
-        let ppn = decodePPN(a)
+        guard let ppn = decodePPN(a) else {
+            camLog.append(String(format: "CAM %07X for an absent slave MEMC: ignored", a))
+            return
+        }
         camLog.append(String(format: "CAM %07X -> ppn %02X lpn %X ppl %d (pagesize %dK)", a, ppn, decodeLPN(a), (a >> 8) & 3, 4 << pageSizeCode))
         let old = camEntries[ppn]
         camEntries[ppn] = a
@@ -478,7 +530,8 @@ public final class MEMC: ARMBus {
             if found < 0 {
                 pageTable[first + k] = 0
             } else {
-                let phys = physicalOffset(UInt32(found * pageBytes + k * 4096))
+                // Each MEMC's 128 pages lie in its own 4 MB.
+                let phys = physicalOffset(UInt32((found >> 7) << 22 + (found & 127) * pageBytes + k * 4096))
                 pageTable[first + k] = UInt32(phys) | (ppl << 24) | 0x0400_0000
             }
         }
@@ -490,7 +543,10 @@ public final class MEMC: ARMBus {
         let seqs = zip(camEntries, camSequence).filter { $0.0 != .max }.map { $0.1 }
         camEntries = [UInt32](repeating: .max, count: camEntries.count)
         for i in 0..<8192 { pageTable[i] = 0 }
-        for (a, q) in zip(raw, seqs) { let p = decodePPN(a); camEntries[p] = a; camSequence[p] = q }
+        for (a, q) in zip(raw, seqs) {
+            guard let p = decodePPN(a) else { continue }
+            camEntries[p] = a; camSequence[p] = q
+        }
         var done = Set<UInt32>()
         for a in camEntries where a != .max {
             let l = decodeLPN(a)
@@ -516,7 +572,7 @@ public final class MEMC: ARMBus {
     public func debugRead(_ address: UInt32, space: DebugSpace) -> UInt8? {
         switch space {
         case .physical:
-            return ram[physicalOffset(address)]
+            return physicalFitted(address) ? ram[physicalOffset(address)] : nil
         case .logical:
             let a = address & 0x03FF_FFFF
             if romOverlay { return rom[Int(a) & romMask] }
@@ -524,7 +580,7 @@ public final class MEMC: ARMBus {
                 guard let p = debugTranslate(a) else { return nil }
                 return ram[Int(p) & ramMask]
             }
-            if a < 0x0300_0000 { return ram[physicalOffset(a)] }
+            if a < 0x0300_0000 { return physicalFitted(a) ? ram[physicalOffset(a)] : nil }
             if a >= 0x0380_0000 { return rom[Int(a) & romMask] }
             return nil
         }
@@ -533,6 +589,7 @@ public final class MEMC: ARMBus {
     public func debugWrite(_ address: UInt32, _ value: UInt8, space: DebugSpace) -> Bool {
         switch space {
         case .physical:
+            guard physicalFitted(address) else { return false }
             ram[physicalOffset(address)] = value
             return true
         case .logical:
@@ -582,6 +639,8 @@ extension MEMC {
         for v in [vinit, vstart, vend, cinit, sstart, sendNext, sendCurrent, sptr, vptr, cptr] { w.u32(v) }
         w.bool(nextSoundBufferValid)
         cache?.saveState(&w)
+        // Only turbo machines have it, so other snapshots keep their layout.
+        if turboShift > 0 { w.u64(subTicks) }
     }
 
     func loadState(_ r: inout StateReader) throws {
@@ -599,6 +658,7 @@ extension MEMC {
         vptr = try r.u32(); cptr = try r.u32()
         nextSoundBufferValid = try r.bool()
         try cache?.loadState(&r)
+        if turboShift > 0 { subTicks = try r.u64() }
         cacheControlChanged()
         updateLevels()
     }

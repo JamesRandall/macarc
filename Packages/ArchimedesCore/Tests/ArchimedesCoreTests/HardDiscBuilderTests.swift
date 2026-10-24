@@ -298,4 +298,123 @@ final class HardDiscBuilderTests: XCTestCase {
         XCTAssertNil(after["File3"])
         XCTAssertEqual(after["File5"], before["File5"])
     }
+
+    // MARK: Resizing
+
+    func testResizeGrowsAndShrinks() throws {
+        let presets = [(HardDiscGeometry.presets[0].geometry, HardDiscGeometry.presets[1].geometry),
+                       (HardDiscGeometry(cylinders: 160, heads: 8, sectorsPerTrack: 32, sectorSize: 512), HardDiscGeometry.idePresets[0].geometry)]
+        for (small, large) in presets {
+            let path = NSTemporaryDirectory() + "macarch-resize-\(UUID().uuidString).hdf"
+            defer { try? FileManager.default.removeItem(atPath: path) }
+            let before = try Self.fragmentedDrive(path, geometry: small)
+            let start = try ADFSHardDiscWriter.usage(path: path)
+            XCTAssertEqual(start.size, small.byteCount)
+
+            let grown = try ADFSHardDiscWriter.resize(path: path, to: large)
+            XCTAssertEqual(grown.size, large.byteCount)
+            XCTAssertEqual(grown.bytesFree, start.bytesFree + large.byteCount - small.byteCount)
+            XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: path)[.size] as? Int, large.byteCount)
+            XCTAssertEqual(try HardDiscImage.open(path: path, sectorSize: large.sectorSize).geometry, large, "the boot block describes the new shape")
+            XCTAssertEqual(try Self.contents(path), before)
+            // The new space is usable: more than the old drive's size in one file.
+            try ADFSHardDiscWriter.add(path: path, items: [.init(path: ["Huge"], data: [UInt8](repeating: 1, count: small.byteCount / 2 + (4 << 20)), type: 0xFFD)])
+            try ADFSHardDiscWriter.add(path: path, items: [.init(path: ["Huge"], data: [], type: 0xFFD)])
+
+            // Back down: the files reach past the end until compacted.
+            let half = HardDiscGeometry(cylinders: small.cylinders / 2, heads: small.heads, sectorsPerTrack: small.sectorsPerTrack, sectorSize: small.sectorSize)
+            XCTAssertThrowsError(try ADFSHardDiscWriter.resize(path: path, to: half)) { e in
+                guard case .tooSmall(let n, let c)? = e as? ADFSHardDiscWriter.WriteError else { return XCTFail("\(e)") }
+                XCTAssertGreaterThan(n, half.byteCount)
+                XCTAssertLessThanOrEqual(c, half.byteCount)
+            }
+            XCTAssertEqual(try Self.contents(path)["File5"], before["File5"], "a refused resize changes nothing")
+            let shrunk = try ADFSHardDiscWriter.resize(path: path, to: half, compact: true)
+            XCTAssertEqual(shrunk.size, half.byteCount)
+            XCTAssertEqual(try HardDiscImage.open(path: path, sectorSize: half.sectorSize).geometry, half)
+            var expected = before
+            expected["Huge"] = []
+            XCTAssertEqual(try Self.contents(path), expected)
+            XCTAssertThrowsError(try ADFSHardDiscWriter.resize(path: path, to: HardDiscGeometry(cylinders: 10, heads: 4)), "too small even compacted")
+            XCTAssertThrowsError(try ADFSHardDiscWriter.resize(path: path, to: small.sectorSize == 256 ? HardDiscGeometry.idePresets[1].geometry : HardDiscGeometry.presets[2].geometry), "sector size is kept")
+        }
+    }
+
+    /// RISC OS uses a grown drive's new space.
+    func testRISCOSUsesGrownDrive() throws {
+        guard let dir = GameSmokeTests.romDir("riscos3_11") else { throw XCTSkip("RISC OS 3.11 ROM not present") }
+        let path = NSTemporaryDirectory() + "macarch-grown-\(UUID().uuidString).hdf"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        try ADFSHardDiscBuilder.create(path: path, geometry: HardDiscGeometry.presets[0].geometry, name: "Grow", items: [
+            .init(path: ["Notes"], data: Array("Still here\n".utf8), type: 0xFFF),
+            .init(path: ["Filler"], data: [UInt8](repeating: 7, count: 18 << 20), type: 0xFFD),
+        ])
+        try ADFSHardDiscWriter.resize(path: path, to: HardDiscGeometry.presets[1].geometry)
+        var c = MachineConfiguration(model: .a440)
+        c.romPaths = [dir]
+        c.hardDiscs = [path]
+        c.powerOnKeys = [0x34]
+        let m = try Machine(configuration: c)
+        m.powerOn()
+        m.run(seconds: 25)
+        m.keyDown(0x0C); m.run(seconds: 0.1); m.keyUp(0x0C) // F12
+        m.run(seconds: 1)
+        // 3 MB (of ROM) didn't fit before (about 1.2 MB was free).
+        m.scheduleTyping("*Type :4.$.Notes\n*Save :4.$.Big 3800000 +300000\n*CDir :4.$.Dir\n*Ex :4.$\n", intervalMs: 40)
+        m.run(seconds: 40)
+        m.hdc?.drives.forEach { $0?.synchronize() }
+        let text = m.recentText
+        XCTAssertTrue(text.contains("Still here"), String(text.suffix(600)))
+        for bad in ["Broken directory", "Bad free space map", "Disc full", "Map full", "Disc error", "not found"] {
+            XCTAssertFalse(text.contains(bad), "\(bad): " + String(text.suffix(600)))
+        }
+        let after = try Self.contents(path)
+        XCTAssertEqual(after["Big"]?.count, 0x300000)
+        XCTAssertGreaterThan(try ADFSHardDiscWriter.usage(path: path).usedEnd, HardDiscGeometry.presets[0].geometry.byteCount, "written beyond the old end")
+    }
+
+    // MARK: Copying between drive types
+
+    /// An ST506 drive's files, empty directory and name on a new IDE
+    /// drive, which an A5000 reads.
+    func testCopyST506DriveToIDE() throws {
+        let st = NSTemporaryDirectory() + "macarch-st-\(UUID().uuidString).hdf"
+        let ide = NSTemporaryDirectory() + "macarch-ide-\(UUID().uuidString).hdf"
+        defer { try? FileManager.default.removeItem(atPath: st); try? FileManager.default.removeItem(atPath: ide) }
+        try ADFSHardDiscBuilder.create(path: st, geometry: HardDiscGeometry.presets[0].geometry, name: "Games", items: [
+            .init(path: ["!App", "!Run"], data: Array("Echo Copied by MacArch\n".utf8), load: 0xFFFF_EB12, exec: 0x3456_7890, attributes: 0x0B & 0x37),
+            .init(path: ["!App", "Data"], data: (0..<40_000).map { UInt8(truncatingIfNeeded: $0 &* 3) }, type: 0xFFD),
+        ], directories: [["!App", "Scrap"]])
+        try ADFSHardDiscWriter.copy(from: st, to: ide, geometry: HardDiscGeometry.idePresets[0].geometry)
+
+        let a = try ADFSHardDiscWriter.contents(path: st), b = try ADFSHardDiscWriter.contents(path: ide)
+        XCTAssertEqual(b.name, "Games")
+        XCTAssertEqual(b.directories, [["!App"], ["!App", "Scrap"]])
+        XCTAssertEqual(b.files.map(\.path), a.files.map(\.path))
+        for (x, y) in Swift.zip(a.files, b.files) {
+            XCTAssertEqual([x.load, x.exec], [y.load, y.exec])
+            XCTAssertEqual(x.attributes, y.attributes)
+            XCTAssertEqual(x.data, y.data)
+        }
+        XCTAssertEqual(try ADFSHardDiscWriter.usage(path: ide).geometry, HardDiscGeometry.idePresets[0].geometry)
+
+        guard let dir = GameSmokeTests.romDir("riscos3_11") else { throw XCTSkip("RISC OS 3.11 ROM not present") }
+        var c = MachineConfiguration(model: .a5000)
+        c.romPaths = [dir]
+        c.hardDiscs = [ide]
+        c.powerOnKeys = [0x34]
+        let m = try Machine(configuration: c)
+        m.powerOn()
+        m.run(seconds: 25)
+        m.keyDown(0x0C); m.run(seconds: 0.1); m.keyUp(0x0C) // F12
+        m.run(seconds: 1)
+        m.scheduleTyping("*Run :4.$.!App.!Run\n*Ex :4.$.!App\n", intervalMs: 40)
+        m.run(seconds: 15)
+        let text = m.recentText
+        XCTAssertTrue(text.contains("Copied by MacArch"), String(text.suffix(600)))
+        XCTAssertTrue(text.contains("Scrap"), String(text.suffix(600)))
+        for bad in ["Broken directory", "Bad free space map", "not found", "Disc error"] {
+            XCTAssertFalse(text.contains(bad), "\(bad): " + String(text.suffix(600)))
+        }
+    }
 }

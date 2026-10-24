@@ -144,7 +144,7 @@ public final class Machine {
         }
         self.configuration = configuration
         self.rom = rom
-        memc = MEMC(ramSize: ramBytes, rom: rom.data, memoryClockMHz: model.memoryClockMHz)
+        memc = MEMC(ramSize: ramBytes, rom: rom.data, memoryClockMHz: model.memoryClockMHz, slaveMEMCs: model == .a540)
         scheduler = Scheduler(bus: memc)
         keyboard = Keyboard()
         rtc = PCF8583(epochSeconds: configuration.rtcEpoch)
@@ -152,10 +152,11 @@ public final class Machine {
         vidc = VIDC(memc: memc, ioc: ioc, scheduler: scheduler)
         fdc = WD1772(scheduler: scheduler, ioc: ioc)
         cpu = ARM2(bus: memc)
-        if configuration.cpu == .arm3 {
+        if configuration.cpu.isARM3 {
             let cache = ARM3Cache()
             cpu.fitARM3(cache: cache)
             memc.cache = cache
+            memc.turboShift = configuration.cpu.turboShift
         }
         memc.io = ioc
         memc.vidc = vidc
@@ -235,7 +236,11 @@ public final class Machine {
         rtc.epochTicks = 0
         for k in configuration.powerOnKeys { keyboard.keyDown(k) }
         if !configuration.powerOnKeys.isEmpty {
-            let release = UInt64(configuration.powerOnKeysMs) * 24_000
+            // RISC OS clears memory before it reads the keyboard, so with
+            // more than 4 MB keys must be held longer (measured on an A540:
+            // under 5 s at 8 MB, under 8 s at 16 MB).
+            let ms = max(configuration.powerOnKeysMs, configuration.ramKB > 4096 ? 2000 + configuration.ramKB / 2 : 0)
+            let release = UInt64(ms) * 24_000
             for k in configuration.powerOnKeys { schedule(InputEvent(tick: release, action: .keyUp(k))) }
         }
     }
@@ -482,6 +487,13 @@ public final class Machine {
         var sum = 1
         for i in 16..<256 where i != 63 { sum += Int(rtc.ram[i]) }
         rtc.ram[63] = UInt8(sum & 0xFF)
+    }
+
+    /// A CMOS image RISC OS has never set up: fewer than eight
+    /// configuration bytes set, besides the clock (0-15), the checksum (63)
+    /// and the drive counts MacArch writes (199). A reset sets dozens.
+    public static func cmosNeverConfigured(_ d: [UInt8]) -> Bool {
+        (16..<min(256, d.count)).filter { $0 != 63 && $0 != cmosDrives && d[$0] != 0 }.count < 8
     }
 
     public func saveCMOS(to path: String) throws {

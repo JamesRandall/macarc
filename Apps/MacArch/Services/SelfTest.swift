@@ -161,6 +161,41 @@ enum SelfTest {
                     }
                 }
             }
+            // MACARCH_SELFTEST_CONFIGURE=1 (or a model, to show it chosen): open Configure Machine at its usual size and capture it
+            // (MACARCH_SELFTEST_CONFIGURE_TAB picks the tab: model, processor, monitor, rom, hardDiscs).
+            if env["MACARCH_SELFTEST_CONFIGURE"] != nil {
+                machine.configureRequested = true
+                try? await Task.sleep(for: .seconds(2))
+                if let window = NSApp.windows.first(where: { $0.title.hasPrefix("Configure —") && $0.isVisible }) {
+                    // MACARCH_SELFTEST_CONFIGURE_HEIGHT asks for another height (to check it's clamped).
+                    let height = env["MACARCH_SELFTEST_CONFIGURE_HEIGHT"].flatMap(Double.init) ?? 640
+                    window.setFrame(NSRect(x: 40, y: 40, width: 760, height: height), display: true)
+                    try? await Task.sleep(for: .seconds(1))
+                    try? "asked \(height), got \(window.frame.height)\n".write(toFile: path + ".configure.txt", atomically: true, encoding: .utf8)
+                    if let frameView = window.contentView?.superview,
+                       let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) {
+                        frameView.cacheDisplay(in: frameView.bounds, to: rep)
+                        try? rep.representation(using: .png, properties: [:])?
+                            .write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-configure.png")))
+                    }
+                    // And scrolled to the end.
+                    @MainActor func scrollView(_ v: NSView) -> NSScrollView? {
+                        if let s = v as? NSScrollView { return s }
+                        for sub in v.subviews { if let s = scrollView(sub) { return s } }
+                        return nil
+                    }
+                    if let content = window.contentView, let sv = scrollView(content), let doc = sv.documentView {
+                        doc.scroll(NSPoint(x: 0, y: doc.isFlipped ? doc.bounds.maxY : 0))
+                        try? await Task.sleep(for: .seconds(1))
+                        if let frameView = window.contentView?.superview,
+                           let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) {
+                            frameView.cacheDisplay(in: frameView.bounds, to: rep)
+                            try? rep.representation(using: .png, properties: [:])?
+                                .write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-configure-end.png")))
+                        }
+                    }
+                }
+            }
             // MACARCH_SELFTEST_WHATSNEW=VERSION: the last version run; the window opens if there's news.
             if env["MACARCH_SELFTEST_WHATSNEW"] != nil,
                let window = NSApp.windows.first(where: { $0.title == "What's New" && $0.isVisible }),

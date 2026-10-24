@@ -142,9 +142,22 @@ struct MacArchApp: App {
             if let id, let machine = MachineController.all[id] {
                 DebuggerWindow(model: machine.debugger)
                     .navigationTitle("Debugger — \(machine.machineName)")
+            } else {
+                ClosesItself()
             }
         }
         .defaultSize(width: 1100, height: 760)
+
+        WindowGroup("Configure Machine", id: "configure", for: UUID.self) { $id in
+            if let id, let machine = MachineController.all[id] {
+                ConfigureMachineWindow(machine: machine)
+                    .navigationTitle("Configure — \(machine.machineName)")
+            } else {
+                ClosesItself()
+            }
+        }
+        .defaultSize(width: 760, height: 640)
+        .windowResizability(.contentSize)
 
         Window("ROMs", id: "roms") { ROMsWindowView() }
             .defaultSize(width: 560, height: 560)
@@ -188,6 +201,9 @@ struct HardwarePickers: View {
 
     var body: some View {
         let model = machine?.model ?? .a3000
+        Button("Configure Machine…") { if let machine { openWindow(id: "configure", value: machine.id) } }
+            .keyboardShortcut("c", modifiers: [.command, .option])
+        Divider()
         Picker("Model", selection: Binding(get: { model }, set: { machine?.setHardware(model: $0) })) {
             ForEach(MachineModel.allCases, id: \.self) { Text($0.displayName).tag($0) }
         }
@@ -258,6 +274,8 @@ struct HardDiscItems: View {
                     Button("New Hard Disc from Files…") { machine?.newHardDiscFromFiles(drive: drive) }
                     Button("Add Files to Hard Disc…") { machine?.addFilesToHardDisc(drive: drive) }
                         .disabled(machine?.hardDiscName(drive) == nil)
+                    Button("Resize Hard Disc…") { machine?.resizeHardDisc(drive: drive) }
+                        .disabled(machine?.hardDiscName(drive) == nil)
                     Button("Open Hard Disc…") { machine?.openHardDisc(drive: drive) }
                     Button("Remove Hard Disc") { machine?.ejectHardDisc(drive: drive) }
                         .disabled(machine?.hardDiscName(drive) == nil)
@@ -315,6 +333,12 @@ struct MachineWindow: View {
                 openWindow(id: "debugger", value: machine.id)
             }
         }
+        .onChange(of: machine.configureRequested) {
+            if machine.configureRequested {
+                machine.configureRequested = false
+                openWindow(id: "configure", value: machine.id)
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             machine.shutdown()
         }
@@ -335,5 +359,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         MachineController.confirmQuit() ? .terminateNow : .terminateCancel
+    }
+}
+
+/// A window restored at launch for a machine window that no longer exists
+/// (they're per machine, by id): it closes rather than standing empty.
+struct ClosesItself: View {
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        Color.clear
+            .frame(width: 1, height: 1)
+            .onAppear { dismiss() }
     }
 }

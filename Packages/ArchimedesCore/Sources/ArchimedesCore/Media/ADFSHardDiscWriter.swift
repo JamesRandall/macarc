@@ -39,12 +39,15 @@ public enum ADFSHardDiscWriter {
         case damaged(String)
         case mapFull
         case noRoom(path: String, needed: Int, largestFree: Int, totalFree: Int)
+        case tooSmall(needed: Int, compacted: Int)
+        case wrongSectorSize
 
         /// There is room in all, but not in one piece: compacting would help.
         public var isFragmented: Bool {
             switch self {
             case .mapFull: return true
             case .noRoom(_, let n, _, let t): return n <= t
+            case .tooSmall: return true
             default: return false
             }
         }
@@ -57,6 +60,9 @@ public enum ADFSHardDiscWriter {
             case .noRoom(let p, let n, let l, let t):
                 if n <= t { return "\(p) needs \(n / 1024) KB in one piece, but the largest free area is \(l / 1024) KB (\(t / 1024) KB free in all). Compact the drive, then try again." }
                 return "There isn't room: \(p) needs \(n / 1024) KB but only \(t / 1024) KB is free."
+            case .tooSmall(let n, let c):
+                return "Files on the drive reach \(n / 1024) KB in" + (c < n ? "; compacted, they'd need \(c / 1024) KB." : ".")
+            case .wrongSectorSize: return "A drive keeps its sector size: ST506 drives have 256-byte sectors, IDE drives 512."
             }
         }
     }
@@ -73,19 +79,93 @@ public enum ADFSHardDiscWriter {
     /// Adds `items` to the image at `path`.
     @discardableResult
     public static func add(path: String, items: [ADFSHardDiscBuilder.Item], compact: Bool = false) throws -> Summary {
+        try onClone(of: path) { v in
+            let moved = compact ? try v.compact() : 0
+            var summary = try v.add(items)
+            summary.bytesMoved = moved
+            return summary
+        }
+    }
+
+    public struct Usage: Sendable, Equatable {
+        public var geometry: HardDiscGeometry
+        /// The drive's size, and the end of the highest file or directory on it.
+        public var size: Int
+        public var usedEnd: Int
+        public var bytesFree: Int
+        /// The smallest size the drive could have once compacted.
+        public var compactedEnd: Int
+    }
+
+    public static func usage(path: String) throws -> Usage {
+        let v = try Volume(path: path)
+        let objects = try v.objects().objects
+        return Usage(geometry: v.geometry, size: v.end, usedEnd: objects.map { $0.address + $0.size }.max() ?? 0xE00,
+                     bytesFree: v.free.reduce(0) { $0 + $1.length } * 256,
+                     compactedEnd: v.roundUp(0xE00) + objects.reduce(0) { $0 + $1.size })
+    }
+
+    /// Changes the drive's size to `geometry`'s, keeping its sector size.
+    /// Disc addresses are byte offsets whatever the shape, so files stay
+    /// where they are: the map's size and free space, the boot block's
+    /// disc record (and, for ST506, the park address) and the file's length
+    /// change. Shrinking needs everything to lie below the new end;
+    /// `compact` closes up the gaps first.
+    @discardableResult
+    public static func resize(path: String, to geometry: HardDiscGeometry, compact: Bool = false) throws -> Usage {
+        try onClone(of: path) { v in
+            if compact { _ = try v.compact() }
+            try v.resize(to: geometry)
+        }
+        return try usage(path: path)
+    }
+
+    /// The drive's contents: every file (with its addresses and
+    /// attributes) and every directory, and the disc's name.
+    public static func contents(path: String) throws -> (name: String, files: [ADFSHardDiscBuilder.Item], directories: [[String]]) {
+        let v = try Volume(path: path)
+        var files: [ADFSHardDiscBuilder.Item] = [], directories: [[String]] = []
+        func walk(_ address: Int, _ prefix: [String], depth: Int) throws {
+            guard depth < 32 else { throw WriteError.damaged("directories nest too deeply under \(prefix.joined(separator: "."))") }
+            for e in try v.directory(at: address, path: (["$"] + prefix).joined(separator: ".")).entries {
+                let p = prefix + [String(String.UnicodeScalarView(e.name.map { Unicode.Scalar($0) }))]
+                if e.isDirectory {
+                    directories.append(p)
+                    try walk(e.sector * 256, p, depth: depth + 1)
+                } else {
+                    files.append(.init(path: p, data: v.read(e.sector * 256, Int(e.length)), load: e.load, exec: e.exec, attributes: e.attributes & 0x37))
+                }
+            }
+        }
+        try walk(0x400, [], depth: 0)
+        // The map interleaves the name: even characters at &F7, odd at &1F6.
+        var name: [UInt8] = []
+        for k in 0..<5 { name += [v.map[0xF7 + k], v.map[0x1F6 + k]] }
+        let trimmed = String(decoding: name.prefix { $0 > 0x20 && $0 < 0x7F }, as: UTF8.self)
+        return (trimmed.isEmpty ? "HardDisc4" : trimmed, files, directories)
+    }
+
+    /// A new drive of shape `geometry` at `destination`, holding what's on
+    /// the drive at `source`: to move an ST506 drive's files to an IDE one,
+    /// say, as the two have different sector sizes.
+    public static func copy(from source: String, to destination: String, geometry: HardDiscGeometry) throws {
+        let c = try contents(path: source)
+        try ADFSHardDiscBuilder.create(path: destination, geometry: geometry, name: c.name, items: c.files, directories: c.directories)
+    }
+
+    /// Runs `change` on a clone of the image, which then takes its place.
+    static func onClone<T>(of path: String, _ change: (Volume) throws -> T) throws -> T {
         let url = URL(fileURLWithPath: path)
-        let work = url.deletingLastPathComponent().appendingPathComponent("." + url.lastPathComponent + ".adding")
+        let work = url.deletingLastPathComponent().appendingPathComponent("." + url.lastPathComponent + ".changing")
         let fm = FileManager.default
         try? fm.removeItem(at: work)
         try fm.copyItem(at: url, to: work) // a clone on APFS
         do {
             let v = try Volume(path: work.path)
-            let moved = compact ? try v.compact() : 0
-            var summary = try v.add(items)
-            summary.bytesMoved = moved
+            let result = try change(v)
             try v.commit()
             guard rename(work.path, url.path) == 0 else { throw HardDiscError.create(String(cString: strerror(errno))) }
-            return summary
+            return result
         } catch {
             try? fm.removeItem(at: work)
             throw error
@@ -125,7 +205,11 @@ public enum ADFSHardDiscWriter {
         var moves: [(from: Int, to: Int, count: Int)] = []
         let boot: [UInt8]
         /// The end of the drive, from the map's size field.
-        let end: Int
+        var end: Int
+        var geometry: HardDiscGeometry
+        /// After a resize: the file's new length, and the changed boot block.
+        var newLength: Int?
+        var newBoot: [UInt8]?
 
         init(path: String) throws {
             let fd = Darwin.open(path, O_RDWR)
@@ -162,6 +246,9 @@ public enum ADFSHardDiscWriter {
             self.size = size
             self.boot = boot
             self.end = min(size, get24(0x0FC) > 0 ? get24(0x0FC) * 256 : size)
+            let sectorSize = (8...12).contains(log2) ? 1 << log2 : 256
+            self.geometry = HardDiscGeometry.infer(fileSize: size, bootBlock: boot, sectorSize: sectorSize)
+                ?? HardDiscGeometry(cylinders: 1, heads: 1, sectorsPerTrack: size / sectorSize, sectorSize: sectorSize)
             self.unit = (8...12).contains(log2) ? (1 << log2) / 256 : 1
             self.map = map
             self.free = free.sorted { $0.start < $1.start }
@@ -271,14 +358,11 @@ public enum ADFSHardDiscWriter {
             d.changed = true
         }
 
-        /// Closes up the gaps between files and directories (see the type's
-        /// notes). Returns the number of bytes to be moved.
-        func compact() throws -> Int {
-            // A real drive's boot block can list defective sectors, which
-            // must stay out of use; only drives without any are compacted.
-            let firstDefect = UInt32(boot[0]) | UInt32(boot[1]) << 8 | UInt32(boot[2]) << 16 | UInt32(boot[3]) << 24
-            guard firstDefect & 0x2000_0000 != 0 else { throw WriteError.damaged("its boot block lists defective sectors, so it can't be compacted safely") }
-            struct Object { var address: Int; let size: Int; let owner: Directory; let index: Int; let directory: Directory? }
+        struct Object { var address: Int; let size: Int; let owner: Directory; let index: Int; let directory: Directory? }
+
+        /// Every file and directory below the root, by address, and each
+        /// directory's parent.
+        func objects() throws -> (objects: [Object], parents: [(child: Directory, parent: Directory)]) {
             var objects: [Object] = []
             var parents: [(child: Directory, parent: Directory)] = []
             func walk(_ d: Directory, depth: Int) throws {
@@ -296,7 +380,57 @@ public enum ADFSHardDiscWriter {
                 }
             }
             try walk(try directory(at: 0x400, path: "$"), depth: 0)
-            objects.sort { $0.address < $1.address }
+            return (objects.sorted { $0.address < $1.address }, parents)
+        }
+
+        /// See `ADFSHardDiscWriter.resize`.
+        func resize(to g: HardDiscGeometry) throws {
+            guard g.sectorSize == geometry.sectorSize else { throw WriteError.wrongSectorSize }
+            let newEnd = g.byteCount
+            let objects = try self.objects().objects
+            let usedEnd = objects.map { $0.address + $0.size }.max() ?? 0xE00
+            guard usedEnd <= newEnd else {
+                throw WriteError.tooSmall(needed: usedEnd, compacted: roundUp(0xE00) + objects.reduce(0) { $0 + $1.size })
+            }
+            // Free space: clipped to the new end, or extended to it.
+            var areas = free.compactMap { f -> (start: Int, length: Int)? in
+                let e = min(f.start + f.length, newEnd / 256)
+                return e > f.start ? (f.start, e - f.start) : nil
+            }
+            if newEnd > end { areas.append((end / 256, (newEnd - end) / 256)) }
+            free = []
+            for a in areas.sorted(by: { $0.start < $1.start }) {
+                if let last = free.last, last.start + last.length >= a.start {
+                    free[free.count - 1].length = max(last.length, a.start + a.length - last.start)
+                } else {
+                    free.append(a)
+                }
+            }
+            guard free.count <= Volume.maxFreeEntries else { throw WriteError.mapFull }
+            let sectors = newEnd / 256
+            map[0x0FC] = UInt8(sectors & 0xFF); map[0x0FD] = UInt8((sectors >> 8) & 0xFF); map[0x0FE] = UInt8((sectors >> 16) & 0xFF)
+            // The disc record (and the ST506 park address), as ADFSFormatter writes them.
+            var b = boot
+            func put32(_ v: Int, at o: Int) { for i in 0..<4 { b[o + i] = UInt8((v >> (8 * i)) & 0xFF) } }
+            b[0x1C1] = UInt8(g.sectorsPerTrack)
+            b[0x1C2] = UInt8(g.heads)
+            put32(newEnd, at: 0x1D0)
+            if g.sectorSize == 256 { put32((g.cylinders - 1) * g.heads * g.sectorsPerTrack * 256, at: 0x1BC) }
+            b[0x1FF] = ADFSFormatter.checksum(b, 0, 0x200)
+            newBoot = b
+            newLength = newEnd
+            end = newEnd
+            geometry = g
+        }
+
+        /// Closes up the gaps between files and directories (see the type's
+        /// notes). Returns the number of bytes to be moved.
+        func compact() throws -> Int {
+            // A real drive's boot block can list defective sectors, which
+            // must stay out of use; only drives without any are compacted.
+            let firstDefect = UInt32(boot[0]) | UInt32(boot[1]) << 8 | UInt32(boot[2]) << 16 | UInt32(boot[3]) << 24
+            guard firstDefect & 0x2000_0000 != 0 else { throw WriteError.damaged("its boot block lists defective sectors, so it can't be compacted safely") }
+            let (objects, parents) = try self.objects()
             var cursor = roundUp(0xE00), previousEnd = 0xE00, moved = 0
             for o in objects {
                 guard o.address >= previousEnd, o.address + o.size <= end else {
@@ -426,6 +560,8 @@ public enum ADFSHardDiscWriter {
             m[0xFF] = ADFSFormatter.checksum(m, 0, 0x100)
             m[0x1FF] = ADFSFormatter.checksum(m, 0x100, 0x100)
             try write(0, m)
+            if let b = newBoot { try write(0xC00, b) }
+            if let n = newLength, ftruncate(fd, off_t(n)) != 0 { throw HardDiscError.create(String(cString: strerror(errno))) }
             fsync(fd)
         }
     }

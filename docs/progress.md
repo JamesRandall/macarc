@@ -261,3 +261,56 @@
   - `testZarchFromZip` runs the imploded archive.
   - `testCompactingMakesRoom` (ST506 and IDE) uses a drive with two 3 MB gaps. A 5 MB file is refused as fragmented, then fits once the drive is compacted. Every file keeps its contents, the free space is one area, and moved directories point at their moved parents. Planning changes nothing.
   - `testRISCOSUsesCompactedDrive`: RISC OS reads a moved file in a moved directory, makes a directory and saves into it there, and deletes a file.
+
+## Resizing hard discs (2026-10-23)
+
+- `ADFSHardDiscWriter.resize` changes an old-map drive's size, keeping its sector size. Disc addresses are byte offsets whatever the drive's shape, so files don't move. The changes are: the map's size field and free space (clipped, or extended with a new area at the end and merged), the boot block's disc record (sectors per track, heads, size, plus the park address for ST506), and the file's length. It works on a clone, as adding does. Shrinking below the highest file is refused (`tooSmall`, with the compacted size), unless `compact` closes up the gaps first. `usage` reports size, free space, the highest used address and the compacted size.
+- App: Hard Disc ▸ Resize Hard Disc… for a fitted drive. It picks from New Hard Disc's sizes for the drive type, shows the current size and usage, offers to compact when shrinking needs it, and restarts the machine. CLI: `hard-disc-resize FILE CYLINDERS HEADS [SECTORS] [--compact]`.
+- Tests:
+  - `testResizeGrowsAndShrinks` (ST506 and IDE): grow, then add a file bigger than the old drive. The boot block gives the new geometry, contents are unchanged and the free space is right. Shrinking is refused, leaving the drive unchanged, then succeeds with compaction. Sizes too small even when compacted, and changes of sector size, are refused.
+  - `testRISCOSUsesGrownDrive`: RISC OS saves 3 MB into a 20 MB drive grown to 40 MB, past the old end.
+
+## Copying a drive between ST506 and IDE (2026-10-23)
+
+- An ST506 drive (256-byte sectors) can't be fitted to an IDE machine (512-byte sectors), or the other way round. Open Hard Disc said only that the image wasn't recognisable. Now it recognises the other kind (from the boot block's disc record) and offers to copy it. The copy goes on a new drive of the right kind beside the original, "NAME (IDE).hdf", sized to the smallest preset that holds the files. It is fitted instead, and the original is left alone.
+- `ADFSHardDiscWriter.contents` reads a drive's files (data, load and execution addresses, attributes), its directories (empty ones included) and its disc name. `copy` builds a new drive from them. `ADFSHardDiscBuilder` takes `directories:` so empty directories survive.
+- CLI: `hard-disc-copy SOURCE DESTINATION [CYLINDERS HEADS [SECTORS]] [--ide]`.
+- Tests: `testCopyST506DriveToIDE` checks files, addresses, attributes, the empty directory and the name, and an A5000 runs the copied `!Run`. Also checked by hand: the user's A440 drive (Doom installed, !NetUtils, !Wolf; 114 files, 22 directories) copied to IDE, and Doom played from it on an A5000.
+
+## Turbo ARM3 (2026-10-23)
+
+- New processor choices, ARM3 ×2 (48 MHz) and ×4 (96 MHz), wherever an ARM3 fits. With the cache on, a cache hit or internal cycle costs 1/2 or 1/4 of a 24 MHz tick. `MEMC.processorCycles` keeps the remainder in `subTicks`, so timing stays exact and deterministic. The CPU charges internal cycles through the new `ARMBus.internalCycles`. Memory cycles (cache misses, writes, I/O) and every device keep real time, so games' timers and the RISC OS clock run as before. Only turbo machines save `subTicks`, so other snapshots keep their layout.
+- `MachineModel.defaultCPU` now prefers the ARM2, else the first choice, as the A540 and A5000 have three choices now.
+- Tests:
+  - `testTurboARM3IsFasterButKeepsRealTime`: a BASIC loop runs about 1.65 and 2.5 times faster, with RISC OS's TIME agreeing to within 3 cs across all three speeds.
+  - The ARM3 A440 snapshot test also runs ×4.
+- Measured by hand: Doom's attract demo on a 4 MB A5000 runs at 4.1 frames/s (ARM3), 5.8 (×2) and 9.3 (×4).
+
+## Configure Machine window (2026-10-23)
+
+- `ConfigureMachineWindow` (Machine ▸ Configure Machine… ⌥⌘C; clicking the toolbar's model button, which still shows the quick menu when held) follows MacBeeb's Hardware Expansions window.
+  - Sections with titles and explanations. Choices are cards with SF Symbols, descriptions and badges (ST506/IDE, RISC OS 3, "Faster than real", "As sold", ROM size). The selected card is outlined, and the one in use is marked Fitted.
+  - The hardware is a draft: an orange restart bar offers Revert and Restart Machine, which calls `setHardware` once. Choosing a model brings back that model's remembered processor, memory and monitor, and a suitable ROM if the current one isn't.
+  - Unsuitable ROMs are dimmed with the reason.
+  - Hard disc rows show usage (from `ADFSHardDiscWriter.usage`) and offer New, Open, Add Files, Resize, New from Files and Remove. These act straight away, and wait while a different model is pending.
+- Self-test: `MACARCH_SELFTEST_CONFIGURE=1` (or a model name, to show it chosen) captures the window, top and scrolled to the end. Checked on an A3000, an A440 with a hard disc, and with an A5000 pending.
+
+## A540 slave MEMCs, checked against the hardware references (2026-10-23)
+
+- Sources:
+  - VLSI's MEMC databook (VL86C110, in the VTI ARM Databook 1990, pp. 4-8 to 4-13): "A(7) specifies whether the Master or Slave Address translator is being accessed", translation compares every entry at once, and the translator is scrambled by page size changes.
+  - Theo Markettos's notes on the A540's decoding PAL: the master at &2000000–&23FFFFF, the slaves from &2400000, with A7 and A12 selecting translators.
+  - The StarDot thread on MEMC1a, from the A540 schematics: the PAL makes a separate A7 and A22 for each MEMC, and the MEMCs' aborts are ANDed.
+  - Arculator, read for behaviour only.
+- MEMC now models the arrangement explicitly (`slaveMEMCs`, `memcCount`), A540 only:
+  - A7 and A12 choose the MEMC for a CAM write at every page size. Before, this was only with 32 KB pages, as in Arculator, but the PAL can't know the page size.
+  - A write for a MEMC that isn't fitted is lost. Before, it wrapped onto the master's pages.
+  - Each MEMC's pages lie in its own 4 MB.
+  - Physical addresses choose the MEMC by bits 22–23. With none fitted there, reads give &FF (an assumption shared with Arculator; the references don't say) and writes are lost. Before, these wrapped into fitted memory.
+  - Other machines keep one MEMC, whose physical space repeats.
+- RISC OS 2.00's 8 MB on a 16 MB A540 is settled as the ROM's own limit. Logging its CAM writes shows it never addresses A12's MEMCs. Over 4 MB its Window Manager 2.00 raises "Too many pages in this machine!", and the error path then unstacks from R11 = "TASK" and takes an address exception.
+- The Configure window's Memory section says so for the A540.
+- Tests:
+  - `testA540SlaveMEMCs`: A7 to a slave at 32 KB and 4 KB pages, an absent slave's CAM write ignored and its logical page aborting, unfitted physical space reading &FF and ignoring writes, and a single MEMC wrapping round.
+  - `testA540MemorySizesBothROMs`: both ROMs at 4, 8 and 16 MB, checking the banner, pages mapped and address exceptions.
+- Fixed: an 8 or 16 MB A540 started at the Supervisor prompt, and a desktop started by hand was in mode 0 (black and white). Its CMOS was empty. A first boot holds Delete to reset CMOS, but RISC OS clears memory before reading the keyboard, so 4 seconds was too short (it needs under 5 s at 8 MB and under 8 s at 16 MB). Now keys are held 2 s plus 0.5 ms per KB above 4 MB, so smaller machines are unchanged. A CMOS file RISC OS never set up (`Machine.cmosNeverConfigured`: fewer than eight configuration bytes) is reset again at the next start, which repairs profiles saved while this was wrong. Test: `testA540FirstBootResetsCMOS`.
