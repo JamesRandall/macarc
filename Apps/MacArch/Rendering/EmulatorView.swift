@@ -126,6 +126,9 @@ final class EmulatorNSView: MTKView {
 
     override func mouseDown(with e: NSEvent) {
         window?.makeFirstResponder(self)
+        // A network tile without the keyboard: the first click gives it the
+        // keyboard, rather than capturing the mouse.
+        if !takesFocus, let onFocus { onFocus(); return }
         if !mouseCaptured { setMouseCaptured(true); return }
         press(0, primaryButton(e))
     }
@@ -235,10 +238,15 @@ final class EmulatorNSView: MTKView {
 
     // MARK: Window
 
+    /// Whether it takes the keyboard (in a network's tiles, only the
+    /// focused machine's does), and what a click on it does if it doesn't.
+    var takesFocus = true
+    var onFocus: (() -> Void)?
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         window?.acceptsMouseMovedEvents = true
-        window?.makeFirstResponder(self)
+        if takesFocus { window?.makeFirstResponder(self) }
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(windowDidResignKey), name: NSWindow.didResignKeyNotification, object: window)
         nc.addObserver(self, selector: #selector(toggleMouseCapture), name: Self.toggleMouseCapture, object: nil)
@@ -259,12 +267,16 @@ struct EmulatorView: NSViewRepresentable {
     let style: DisplayStyle
     var onRenderer: (Renderer) -> Void = { _ in }
     var onZoom: (Double) -> Void = { _ in }
+    var takesFocus = true
+    var onFocus: (() -> Void)?
 
     func makeNSView(context: Context) -> EmulatorNSView {
         let device = MTLCreateSystemDefaultDevice()
         let view = EmulatorNSView(frame: .zero, device: device)
         view.machine = machine
         view.onZoom = onZoom
+        view.takesFocus = takesFocus
+        view.onFocus = onFocus
         view.colorPixelFormat = .bgra8Unorm
         view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         view.preferredFramesPerSecond = 120
@@ -279,5 +291,10 @@ struct EmulatorView: NSViewRepresentable {
 
     func updateNSView(_ view: EmulatorNSView, context: Context) {
         view.renderer?.style = style
+        view.onFocus = onFocus
+        if takesFocus != view.takesFocus {
+            view.takesFocus = takesFocus
+            if takesFocus { view.window?.makeFirstResponder(view) }
+        }
     }
 }

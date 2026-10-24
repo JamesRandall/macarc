@@ -87,6 +87,11 @@ public enum MachineModel: String, CaseIterable, Codable, Sendable {
     /// Sector size of the built-in hard disc interface.
     public var hardDiscSectorSize: Int { hasIDE ? 512 : 256 }
 
+    /// Takes Acorn's Econet module: every model with the internal header
+    /// (ADF10 on the 300 and 400 series, A3000, A540 and A5000; AEH52 on the
+    /// A3020 and A4000). The A3010 has none.
+    public var takesEconet: Bool { self != .a3010 }
+
     /// DRAM cycle rate: 8 MHz MEMC1a, 12 MHz on the A540 and the A5000 family.
     public var memoryClockMHz: Int { self == .a540 || hasNewIO ? 12 : 8 }
 }

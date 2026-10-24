@@ -2,7 +2,7 @@
 /// Time is the MEMC master tick counter (24 MHz).
 public final class Scheduler {
     public enum Slot: Int, CaseIterable, Sendable {
-        case timer0, timer1, videoLine, keyboardTx, keyboardRx, floppy, sound, input, hardDisc, ide, fdc765, fdcIndex
+        case timer0, timer1, videoLine, keyboardTx, keyboardRx, floppy, sound, input, hardDisc, ide, fdc765, fdcIndex, econet
     }
 
     var due = [UInt64](repeating: .max, count: Slot.allCases.count)

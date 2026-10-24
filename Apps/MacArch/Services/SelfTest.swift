@@ -161,6 +161,13 @@ enum SelfTest {
                     }
                 }
             }
+            // MACARCH_SELFTEST_NETWORK=TEMPLATE: make that network (in MACARCH_SELFTEST_NETWORK_DIR, else a
+            // temporary folder), open its studio (MACARCH_SELFTEST_NETWORK_MODE: canvas, tiles, focus or traffic),
+            // let it run, and capture it (-network.png) with a report (.network.txt). MACARCH_SELFTEST_NETWORK_SEND=1
+            // has station 1 send station 2 a message through RISC OS's Econet SWIs first.
+            if let template = env["MACARCH_SELFTEST_NETWORK"].flatMap(NetworkTemplate.init(rawValue:)) {
+                await networkSelfTest(template, path: path, env: env)
+            }
             // MACARCH_SELFTEST_CONFIGURE=1 (or a model, to show it chosen): open Configure Machine at its usual size and capture it
             // (MACARCH_SELFTEST_CONFIGURE_TAB picks the tab: model, processor, monitor, rom, hardDiscs).
             if env["MACARCH_SELFTEST_CONFIGURE"] != nil {
@@ -253,9 +260,77 @@ enum SelfTest {
             NSApp.terminate(nil)
         }
     }
+
+    private static func networkSelfTest(_ template: NetworkTemplate, path: String, env: [String: String]) async {
+        let folder = env["MACARCH_SELFTEST_NETWORK_DIR"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.temporaryDirectory.appendingPathComponent("MacArch self-test")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent(template.title).appendingPathExtension(NetworkPackage.fileExtension)
+        try? FileManager.default.removeItem(at: url)
+        var report = ""
+        do { try NetworkPackage.create(template, at: url) } catch { report += "create failed: \(error)\n" }
+        NotificationCenter.default.post(name: NetworkStudioCommands.openRequest, object: url)
+        let seconds = Double(env["MACARCH_SELFTEST_NETWORK_SECONDS"] ?? "") ?? 30
+        try? await Task.sleep(for: .seconds(seconds))
+        guard let session = NetworkSession.opened(url) else {
+            report += "no session; open: \(NetworkSession.open.keys.map(\.path)); windows: \(NSApp.windows.map(\.title))\n"
+            try? report.write(toFile: path + ".network.txt", atomically: true, encoding: .utf8)
+            return
+        }
+        if env["MACARCH_SELFTEST_NETWORK_SEND"] != nil {
+            let on = session.project.stations.compactMap { node in session.controllers[node.id].map { (node, $0) } }
+            if on.count >= 2 {
+                let (a, b) = (on[0].1, on[1].1)
+                for c in [a, b] {
+                    c.keyDown(0x0C); try? await Task.sleep(for: .milliseconds(100)); c.keyUp(0x0C)
+                }
+                try? await Task.sleep(for: .seconds(1))
+                for c in [a, b] { c.type("BASIC\n") }
+                try? await Task.sleep(for: .seconds(2))
+                b.type("DIM B% 64:SYS &40000,&77,\(on[0].0.stationNumber ?? 1),0,B%,64 TO H%\n")
+                try? await Task.sleep(for: .seconds(4))
+                a.type("DIM B% 64:$B%=\"HELLO\":SYS &40009,&80,&77,\(on[1].0.stationNumber ?? 2),0,B%,6,10,100 TO S%:PRINT \"SENT \";S%\n")
+                try? await Task.sleep(for: .seconds(5))
+                b.type("SYS &40001,H% TO S%:PRINT \"GOT \";S%;\" \";$B%\n")
+                try? await Task.sleep(for: .seconds(4))
+            }
+        }
+        let status = session.network.status
+        report += "machines on: \(session.controllers.count) of \(session.project.stations.count)\n"
+        report += String(format: "speed: %.2f\n", status.speed)
+        report += "frames: \(session.network.frames().map { "\($0.transmitter):\($0.kind.rawValue)" }.joined(separator: " "))\n"
+        for node in session.project.stations {
+            guard let host = session.controllers[node.id]?.host else { report += "\(node.name): off\n"; continue }
+            let text = host.sendAndWait { s in s.machine.screenText.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.suffix(4) }
+            report += "\(node.name) (\(node.stationNumber ?? 0)):\n  " + text.joined(separator: "\n  ") + "\n"
+        }
+        try? report.write(toFile: path + ".network.txt", atomically: true, encoding: .utf8)
+        if let window = NSApp.windows.first(where: { $0.title == session.project.name && $0.isVisible }) {
+            window.setFrame(NSRect(x: 40, y: 40, width: 1180, height: 780), display: true)
+            try? await Task.sleep(for: .seconds(1.5))
+            if let frameView = window.contentView?.superview,
+               let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) {
+                frameView.cacheDisplay(in: frameView.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?
+                    .write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-network.png")))
+            }
+            // The live pictures (Metal views, which the capture above leaves black), as each draws itself.
+            for (n, view) in (window.contentView?.allSubviews(of: EmulatorNSView.self) ?? []).enumerated() {
+                if let image = view.renderer?.renderImage(width: 416, height: 312) {
+                    let rep = NSBitmapImageRep(cgImage: image)
+                    try? rep.representation(using: .png, properties: [:])?
+                        .write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-tile\(n).png")))
+                }
+            }
+        }
+    }
 }
 
 private extension NSView {
+    func allSubviews<T: NSView>(of type: T.Type) -> [T] {
+        subviews.flatMap { v -> [T] in ((v as? T).map { [$0] } ?? []) + v.allSubviews(of: type) }
+    }
+
     func firstSubview<T: NSView>(of type: T.Type) -> T? {
         for v in subviews {
             if let t = v as? T { return t }
@@ -263,4 +338,5 @@ private extension NSView {
         }
         return nil
     }
+
 }

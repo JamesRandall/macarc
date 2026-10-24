@@ -25,6 +25,9 @@ public struct MachineConfiguration: Codable, Sendable, Equatable {
     }
     /// Hard disc image files, by drive number (nil: no drive fitted).
     public var hardDiscs: [String?] = []
+    /// The Econet station number, with an Econet module fitted (nil: none).
+    /// RISC OS reads it from CMOS byte 0, which is set to match.
+    public var econetStation: Int?
 
     public init() {}
 
@@ -36,7 +39,7 @@ public struct MachineConfiguration: Codable, Sendable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case version, model, cpu, ramKB, romPaths, cmosPath, rtcEpoch, powerOnKeys, powerOnKeysMs, floppyController, monitor, hardDiscs
+        case version, model, cpu, ramKB, romPaths, cmosPath, rtcEpoch, powerOnKeys, powerOnKeysMs, floppyController, monitor, hardDiscs, econetStation
     }
 
     // Fields added after version 1 are optional, so older snapshots load.
@@ -54,6 +57,7 @@ public struct MachineConfiguration: Codable, Sendable, Equatable {
         floppyController = try c.decodeIfPresent(String.self, forKey: .floppyController) ?? "WD1772"
         monitor = try c.decodeIfPresent(String.self, forKey: .monitor) ?? "standard"
         hardDiscs = try c.decodeIfPresent([String?].self, forKey: .hardDiscs) ?? []
+        econetStation = try c.decodeIfPresent(Int.self, forKey: .econetStation)
     }
 }
 
@@ -87,6 +91,8 @@ public final class Machine {
     /// The 82C711 and IOEB of the A5000 family (its floppy controller
     /// replaces the WD1772, which then only holds the drives).
     public let superIO: SuperIO?
+    /// The Econet module, when one's fitted.
+    public let econet: EconetModule?
 
     /// Fitted hard disc images by drive, whichever controller has them.
     public var hardDiscImages: [HardDiscImage?] { hdc?.drives ?? superIO?.ide?.drives ?? [] }
@@ -187,12 +193,30 @@ public final class Machine {
         } else {
             superIO = nil
         }
+        if let station = configuration.econetStation {
+            guard (1...254).contains(station) else {
+                throw MachineError.badConfiguration("Econet station numbers go from 1 to 254")
+            }
+            guard model.takesEconet else {
+                throw MachineError.badConfiguration("The \(model.displayName) has no Econet header")
+            }
+            let e = EconetModule(station: UInt8(station), clock: { [unowned memc] in memc.ticks })
+            e.onIRQ = { [unowned ioc] on in ioc.setFIQ(IOC.fiqEconet, on) }
+            e.onReschedule = { [unowned scheduler] t in
+                if t == .max { scheduler.cancel(.econet) } else { scheduler.schedule(.econet, at: t) }
+            }
+            ioc.econet = e
+            econet = e
+        } else {
+            econet = nil
+        }
         if configuration.cpu == .arm250 { cpu.hasSWP = true }
         let cpuRef = cpu
         ioc.updateLines = { irq, fiq in cpuRef.irqLine = irq; cpuRef.fiqLine = fiq }
         rtc.clockTicks = { [unowned memc] in memc.ticks }
         fdc.currentPC = { cpuRef.currentInstructionAddress }
         scheduler.setHandler(.input) { [unowned self] in self.processInput() }
+        scheduler.setHandler(.econet) { [unowned self] in self.econet?.advance(to: self.memc.ticks) }
         cpu.swiObserver = { [unowned self] a, n in self.observeSWI(n, at: a) }
         let log: (String) -> Void = { [unowned self] s in self.deviceLog.append(s) }
         ioc.unknownAccess = log
@@ -204,10 +228,12 @@ public final class Machine {
         // A CMOS reset (Delete held at power-on) writes the default drive
         // count; the fitted hard discs are added as soon as it does, before
         // ADFS reads it.
-        if model.hardDiscSlots > 0 && !configuration.powerOnKeys.isEmpty {
+        // The Econet station number is set the same way.
+        if (model.hardDiscSlots > 0 || econet != nil) && !configuration.powerOnKeys.isEmpty {
             rtc.ramWritten = { [unowned self] a in
                 guard self.ticks < MasterClock.ticks(milliseconds: 30_000) else { return }
                 if a == Self.cmosDrives && self.configureHardDiscsInCMOS() { self.cmosAdjusted = true }
+                if a == Self.cmosStation && self.configureStationInCMOS() { self.cmosAdjusted = true }
                 // RISC OS then writes the checksum of what it set.
                 if a == 63 && self.cmosAdjusted { self.updateCMOSChecksum() }
             }
@@ -230,7 +256,9 @@ public final class Machine {
         fdc.masterReset()
         hdc?.reset()
         superIO?.reset()
+        econet?.reset(now: 0)
         configureHardDiscsInCMOS()
+        configureStationInCMOS()
         cpu.reset()
         poweredOn = true
         rtc.epochTicks = 0
@@ -249,11 +277,13 @@ public final class Machine {
     public func reset() {
         resetCount += 1
         configureHardDiscsInCMOS()
+        configureStationInCMOS()
         memc.reset()
         ioc.reset()
         fdc.masterReset()
         hdc?.reset()
         superIO?.reset()
+        econet?.reset(now: memc.ticks)
         cpu.reset()
     }
 
@@ -477,6 +507,20 @@ public final class Machine {
         let wanted = (hardDiscImages.lastIndex(where: { $0 != nil }) ?? -1) + 1
         guard configuredHardDiscs != wanted else { return false }
         rtc.ram[Self.cmosDrives] = (rtc.ram[Self.cmosDrives] & ~hardDiscMask) | UInt8(wanted << hardDiscShift)
+        updateCMOSChecksum()
+        return true
+    }
+
+    /// RTC RAM byte holding the Econet station number (CMOS byte 0: RISC
+    /// OS's bytes 0-191 are at &40 onwards).
+    static let cmosStation = 0x40
+
+    /// With Econet fitted, the station number in CMOS is the network's, as
+    /// the owner would set it with SetStation. Returns whether it changed.
+    @discardableResult
+    func configureStationInCMOS() -> Bool {
+        guard let e = econet, rtc.ram[Self.cmosStation] != e.station else { return false }
+        rtc.ram[Self.cmosStation] = e.station
         updateCMOSChecksum()
         return true
     }

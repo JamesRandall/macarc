@@ -15,4 +15,4 @@
 | Arculator, for monitor IDs | as above | GPLv2 | Facts only: the values the IOEB's monitor ID register reads for a standard, multisync and VGA monitor, and which bit follows horizontal sync. `SuperIO.readIOEB` encodes them itself. |
 
 The ROM images in `roms/` are supplied by the user and are git-ignored. The images in `discimages/` are an input corpus, never modified and git-ignored.
-Release licence: undecided. The Swift code is original, so MIT or GPLv3 both remain open.
+Release licence: GPLv3 (`LICENSE`, present from the first commit). The Swift code is original. MacBeeb, also GPLv3 and by the same owner, can be drawn on directly.

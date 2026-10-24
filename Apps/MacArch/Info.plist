@@ -22,6 +22,14 @@
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
+            <key>CFBundleTypeName</key><string>MacArch Network</string>
+            <key>CFBundleTypeRole</key><string>Editor</string>
+            <key>LSHandlerRank</key><string>Owner</string>
+            <key>LSTypeIsPackage</key><true/>
+            <key>LSItemContentTypes</key>
+            <array><string>com.accidentalfish.macarch.network</string></array>
+        </dict>
+        <dict>
             <key>CFBundleTypeName</key><string>Archimedes Floppy Disc Image</string>
             <key>CFBundleTypeRole</key><string>Viewer</string>
             <key>LSHandlerRank</key><string>Owner</string>
@@ -42,6 +50,17 @@
     </array>
     <key>UTExportedTypeDeclarations</key>
     <array>
+        <dict>
+            <key>UTTypeIdentifier</key><string>com.accidentalfish.macarch.network</string>
+            <key>UTTypeDescription</key><string>MacArch Network</string>
+            <key>UTTypeConformsTo</key>
+            <array><string>com.apple.package</string><string>public.composite-content</string></array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array><string>macarchnet</string></array>
+            </dict>
+        </dict>
         <dict>
             <key>UTTypeIdentifier</key><string>com.accidentalfish.macarch.adf</string>
             <key>UTTypeDescription</key><string>ADFS Floppy Disc Image</string>

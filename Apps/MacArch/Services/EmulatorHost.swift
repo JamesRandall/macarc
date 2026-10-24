@@ -2,7 +2,8 @@ import ArchimedesCore
 import Foundation
 import QuartzCore
 
-/// Runs one machine on its own thread. Everything else talks to it with
+/// Runs one machine on its own thread, or as a station of a network, on the
+/// network's thread (see NetworkHost). Everything else talks to it with
 /// `send`, whose closures run on that thread between slices of emulation,
 /// and reads what it publishes (frame, lights) under a lock.
 final class EmulatorHost: @unchecked Sendable {
@@ -81,9 +82,19 @@ final class EmulatorHost: @unchecked Sendable {
     private var guestStart: UInt64 = 0
     private var lastCMOSSave: CFTimeInterval = 0
 
-    init(machine: Machine, profile: Profile, audioSink: AudioSink) {
+    /// A network's station: the network's thread runs it, in lockstep
+    /// with the others, so it has no thread of its own.
+    let isStation: Bool
+    /// The network running it, if it's a station.
+    weak var network: NetworkHost?
+    /// The machine its network has on the line (a power cycle or a loaded
+    /// state makes a new one). The network's thread's.
+    var lineMachine: Machine?
+
+    init(machine: Machine, profile: Profile, audioSink: AudioSink, isStation: Bool = false) {
         self.profile = profile
         self.audioSink = audioSink
+        self.isStation = isStation
         let s = Session(machine: machine, host: self)
         session = s
         attach(machine)
@@ -92,7 +103,8 @@ final class EmulatorHost: @unchecked Sendable {
     // MARK: Main-thread API
 
     func start() {
-        guard thread == nil else { return }
+        // A station's network runs it: a thread here would run it twice.
+        guard thread == nil, !isStation else { return }
         let t = Thread { [weak self] in self?.threadMain() }
         t.name = "MacArch emulation"
         t.qualityOfService = .userInteractive
@@ -101,6 +113,7 @@ final class EmulatorHost: @unchecked Sendable {
     }
 
     func stop() {
+        if isStation { saveCMOSIfChanged(); return }
         lock.lock(); stopRequested = true; lock.unlock()
         while let t = thread, !t.isFinished { usleep(2000) }
         thread = nil
@@ -108,11 +121,12 @@ final class EmulatorHost: @unchecked Sendable {
 
     func send(_ command: @escaping (Session) -> Void) {
         lock.lock(); commands.append(command); lock.unlock()
+        network?.needsAttention()
     }
 
     var paused: Bool {
         get { lock.lock(); defer { lock.unlock() }; return pausedFlag }
-        set { lock.lock(); pausedFlag = newValue; lock.unlock() }
+        set { lock.lock(); pausedFlag = newValue; lock.unlock(); network?.needsAttention() }
     }
 
     var speedLimited: Bool {
@@ -134,6 +148,10 @@ final class EmulatorHost: @unchecked Sendable {
         get { lock.lock(); defer { lock.unlock() }; return heldFlag }
         set { lock.lock(); heldFlag = newValue; lock.unlock(); send { $0.host.resyncClock() } }
     }
+
+    /// The session's machine, for the network's thread (the driving
+    /// thread) only.
+    var drivingMachine: Machine? { session?.machine }
 
     fileprivate func publishStop(_ m: Machine) {
         let d = m.debuggerIfCreated
@@ -202,11 +220,67 @@ final class EmulatorHost: @unchecked Sendable {
         savedCMOS = m.cmos
     }
 
-    private func saveCMOSIfChanged() {
+    func saveCMOSIfChanged() {
         guard profile.persist, let m = session?.machine, m.cmos != savedCMOS else { return }
         let path = profile.cmosPath
         try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         if (try? m.saveCMOS(to: path)) != nil { savedCMOS = m.cmos }
+    }
+
+    // MARK: Driving (its own thread, or its network's)
+
+    /// Runs the queued commands. Returns whether there were any.
+    @discardableResult
+    func runCommands() -> Bool {
+        guard let s = session else { return false }
+        lock.lock()
+        let cmds = commands
+        commands.removeAll()
+        lock.unlock()
+        // Commands (the UI's, and agents' tool calls) run even while
+        // paused, held or stopped in the debugger.
+        for c in cmds { c(s) }
+        return !cmds.isEmpty
+    }
+
+    /// Whether the machine should run now: not paused (a station:
+    /// suspended), held for an agent or stopped in the debugger. Publishes
+    /// the debugger's state.
+    func readyToRun() -> Bool {
+        guard let m = session?.machine else { return false }
+        publishStop(m)
+        lock.lock()
+        let ready = !pausedFlag && !heldFlag
+        lock.unlock()
+        return ready && !m.isStoppedByDebugger
+    }
+
+    /// Runs the machine for `ticks` (a network's quantum). Returns false
+    /// if the debugger stopped it.
+    func step(ticks: UInt64) -> Bool {
+        guard let s = session else { return false }
+        let stopped = s.machine.run(ticks: ticks) == .stopped
+        ticksSincePublished &+= ticks
+        // (Quanta are short: the lights and the rest needn't be published
+        // every one.)
+        if stopped || ticksSincePublished >= 800_000 {
+            ticksSincePublished = 0
+            publishLights(s.machine)
+            publishStop(s.machine)
+            let now = CACurrentMediaTime()
+            if now - lastCMOSSave > 10 { saveCMOSIfChanged(); lastCMOSSave = now }
+        }
+        return !stopped
+    }
+
+    private var ticksSincePublished: UInt64 = 0
+
+    /// A station joining its network: powered on, as a machine is.
+    func powerOnForNetwork() {
+        guard let s = session else { return }
+        s.machine.powerOn()
+        savedCMOS = s.machine.cmos
+        lastCMOSSave = CACurrentMediaTime()
     }
 
     private func threadMain() {
@@ -219,12 +293,8 @@ final class EmulatorHost: @unchecked Sendable {
         while true {
             lock.lock()
             let stop = stopRequested, paused = pausedFlag, limited = speedLimitedFlag, held = heldFlag
-            let cmds = commands
-            commands.removeAll()
             lock.unlock()
-            // Commands (the UI's, and agents' tool calls) run even while
-            // paused, held or stopped in the debugger.
-            for c in cmds { c(s) }
+            runCommands()
             if stop { break }
             let m = s.machine
             publishStop(m)

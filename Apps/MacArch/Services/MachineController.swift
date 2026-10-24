@@ -3,6 +3,22 @@ import ArchimedesCore
 import Observation
 import UniformTypeIdentifiers
 
+/// What a network station's controller tells its network (instead of
+/// remembering its hardware in the app's settings).
+@MainActor
+protocol StationOwner: AnyObject {
+    /// Its hardware changed (model, processor, memory, monitor, ROM).
+    func stationSetupChanged(_ controller: MachineController)
+    /// A disc is going in: the network's copy of it to use instead.
+    func station(_ controller: MachineController, willInsert source: URL, drive: Int) -> URL?
+    /// Hard discs are being fitted: the network's copies to use instead.
+    func station(_ controller: MachineController, willFitHardDiscs paths: [String?]) -> [String?]
+    func station(_ controller: MachineController, didEject drive: Int)
+    func stationNumber(_ controller: MachineController) -> Int?
+    func stationCMOSPath(_ controller: MachineController) -> String?
+    func stationTitle(_ controller: MachineController) -> String
+}
+
 /// One emulated Archimedes and its window's actions.
 @MainActor
 @Observable
@@ -63,10 +79,67 @@ final class MachineController {
     private(set) var inspection: String?
 
     init() {
+        stationID = nil
         Self.live.add(self)
         Self.all[id] = self
         if let path = AppSettings.shared.romPath { start(romPath: path) }
         SelfTest.runIfRequested(self)
+    }
+
+    // MARK: Network stations
+
+    /// The network node this machine is, if it's a network's station.
+    let stationID: UUID?
+    var isStation: Bool { stationID != nil }
+    @ObservationIgnored weak var owner: StationOwner?
+    /// A server's console: its screen's last line, kept up to date.
+    private(set) var consoleLine: String?
+    @ObservationIgnored var watchesConsole = false
+    @ObservationIgnored private var consoleTimer: Timer?
+
+    /// A network's station: `machine`, which its network runs (see
+    /// `host`, which the network takes).
+    init(station: UUID, machine m: Machine, cmosPath: String, romPath: String, hardDiscs: [String?], owner: StationOwner) {
+        stationID = station
+        self.owner = owner
+        let c = m.configuration
+        model = c.model; cpu = c.cpu; ramKB = c.ramKB; monitor = c.monitorType
+        self.romPath = romPath; self.hardDiscs = hardDiscs
+        romVersion = m.rom.versionString
+        Self.live.add(self)
+        Self.all[id] = self
+        audio.muted = true
+        host = EmulatorHost(machine: m, profile: .init(cmosPath: cmosPath), audioSink: tee, isStation: true)
+        lightsTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 15, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.poll() }
+        }
+        consoleTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.readConsole() }
+        }
+    }
+
+    /// Switched off, or its network closed: it stops being shown.
+    func detachFromNetwork() {
+        lightsTimer?.invalidate()
+        consoleTimer?.invalidate()
+        audio.stop()
+        Self.all[id] = nil
+        Self.live.remove(self)
+    }
+
+    /// Whether this station's sound is heard (the one with the keyboard).
+    func setAudible(_ on: Bool) {
+        if on { audio.start() } else { audio.stop() }
+        audio.muted = !on || muted
+    }
+
+    private func readConsole() {
+        guard watchesConsole, let host else { return }
+        host.send { [weak self] s in
+            let line = s.machine.screenText.last { !$0.trimmingCharacters(in: .whitespaces).isEmpty }?
+                .trimmingCharacters(in: .whitespaces)
+            DispatchQueue.main.async { if self?.consoleLine != line { self?.consoleLine = line } }
+        }
     }
 
     // MARK: Machine
@@ -88,6 +161,7 @@ final class MachineController {
         c.monitorType = hw.monitor
         c.romPaths = [hw.romPath]
         c.hardDiscs = hw.hardDiscs
+        c.econetStation = owner?.stationNumber(self)
         // First boot, or a CMOS RISC OS never set up (as a 16 MB A540's was
         // when Delete was let go too soon): Delete held resets it to defaults.
         if let d = FileManager.default.contents(atPath: cmos), !Machine.cmosNeverConfigured([UInt8](d)) {
@@ -108,7 +182,7 @@ final class MachineController {
             alert("A hard disc image is missing", "The machine starts without " + missing.map { ($0 as NSString).lastPathComponent }.joined(separator: ", ") + ". Use Hard Disc > Open to fit it again.")
         }
         let rom = try ROMImage.load(paths: [hw.romPath])
-        let cmos = AppSettings.cmosPath(for: rom, model: hw.model)
+        let cmos = owner?.stationCMOSPath(self) ?? AppSettings.cmosPath(for: rom, model: hw.model)
         return (try Machine(configuration: configuration(hw, cmos: cmos), rom: rom), cmos, hw)
     }
 
@@ -118,6 +192,10 @@ final class MachineController {
 
     private func adopt(_ hw: Hardware) {
         model = hw.model; cpu = hw.cpu; ramKB = hw.ramKB; monitor = hw.monitor; romPath = hw.romPath; hardDiscs = hw.hardDiscs
+        if let owner {
+            owner.stationSetupChanged(self)
+            return
+        }
         let s = AppSettings.shared
         s.model = hw.model; s.romPath = hw.romPath
         s.setCPU(hw.cpu, for: hw.model); s.setRAMKB(hw.ramKB, for: hw.model); s.setHardDiscs(hw.hardDiscs, for: hw.model)
@@ -184,7 +262,10 @@ final class MachineController {
                      monitor newMonitor: MonitorType? = nil, romPath newROM: String? = nil, hardDiscs newDiscs: [String?]? = nil,
                      reload: Bool = false) {
         var hw = Hardware(model: model, cpu: cpu, ramKB: ramKB, monitor: monitor, romPath: romPath ?? "", hardDiscs: hardDiscs)
-        if let newModel, newModel != hw.model {
+        if let newModel, newModel != hw.model, isStation {
+            hw = Hardware(model: newModel, cpu: newModel.defaultCPU, ramKB: newModel.defaultRAMKB, monitor: .standard,
+                          romPath: hw.romPath, hardDiscs: [])
+        } else if let newModel, newModel != hw.model {
             let s = AppSettings.shared
             hw = Hardware(model: newModel, cpu: s.cpu(for: newModel), ramKB: s.ramKB(for: newModel), monitor: s.monitor(for: newModel),
                           romPath: hw.romPath, hardDiscs: s.hardDiscs(for: newModel))
@@ -194,6 +275,7 @@ final class MachineController {
         if let newRAM { hw.ramKB = newRAM }
         if let newROM { hw.romPath = newROM }
         if let newDiscs { hw.hardDiscs = newDiscs }
+        if let owner, hw.hardDiscs != hardDiscs { hw.hardDiscs = owner.station(self, willFitHardDiscs: hw.hardDiscs) }
         guard reload || hw != hardware || host == nil else { return }
         guard let host else {
             // No machine yet: remember the choice, and start if there is a ROM.
@@ -285,6 +367,11 @@ final class MachineController {
     /// Puts the image in drive 0. Writes stay in memory; the file is never changed.
     func insertDisc(_ url: URL) {
         guard confirmDiscChanges(before: "inserting another disc") else { return }
+        var url = url
+        if let owner {
+            guard let copy = owner.station(self, willInsert: url, drive: 0) else { return }
+            url = copy
+        }
         do {
             let img = try FloppyImage.open(path: url.path)
             host?.send { $0.machine.insertFloppy(img) }
@@ -300,7 +387,11 @@ final class MachineController {
         guard confirmDiscChanges(before: "ejecting it") else { return }
         host?.send { $0.machine.ejectFloppy() }
         discName = nil
+        owner?.station(self, didEject: 0)
     }
+
+    /// A disc the network put in drive 0 when it started the machine.
+    func noteNetworkDisc(_ name: String) { discName = name }
 
     /// Writes drive 0's changes back to its image file (or to `url`).
     @discardableResult
@@ -963,7 +1054,8 @@ final class MachineController {
 
     var title: String {
         if host == nil { return "Welcome to MacArch" }
-        var t = discName.map { "\(machineName) — \($0)" + (disc.modified ? " (edited)" : "") } ?? machineName
+        let name = owner.map { "\($0.stationTitle(self)) — \(machineName)" } ?? machineName
+        var t = discName.map { "\(name) — \($0)" + (disc.modified ? " (edited)" : "") } ?? name
         if paused { t += " (Paused)" } else if heldForAgent { t += " (Held by AI Agent)" }
         if recordingURL != nil { t += " ● Recording" }
         return t

@@ -38,6 +38,8 @@ struct MacArchApp: App {
                     .disabled(machine?.discName == nil)
                 Divider()
                 HardDiscMenus(machine: machine)
+                Divider()
+                NetworkMenuItems()
             }
             CommandGroup(replacing: .saveItem) {
                 Button("Save Screenshot…") { machine?.saveScreenshot() }
@@ -110,6 +112,10 @@ struct MacArchApp: App {
                 .disabled(machine?.host == nil)
             }
             CommandMenu("MCP") { MCPMenu() }
+            CommandGroup(before: .windowList) {
+                NetworkStudioMenuItem()
+                Divider()
+            }
             CommandMenu("Machine") {
                 Group {
                 Button(machine?.paused == true || machine?.heldForAgent == true ? "Resume" : "Pause") { machine?.togglePause() }
@@ -137,6 +143,19 @@ struct MacArchApp: App {
                 .disabled(machine?.host == nil)
             }
         }
+
+        WindowGroup("Network", id: NetworkStudioWindow.windowID, for: URL.self) { $url in
+            NetworkStudioWindow(url: url)
+        }
+        .defaultSize(width: 1180, height: 780)
+
+        WindowGroup("Station", id: StationWindow.windowID, for: StationWindow.Ref.self) { $ref in
+            StationWindow(ref: ref)
+        }
+        .defaultSize(width: 800, height: 640)
+
+        Window("New Network", id: NetworkStartView.windowID) { NetworkStartView() }
+            .windowResizability(.contentSize)
 
         WindowGroup("Debugger", id: "debugger", for: UUID.self) { $id in
             if let id, let machine = MachineController.all[id] {
@@ -289,6 +308,27 @@ struct MachineWindow: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
+        MachineScreen(machine: machine)
+            .onAppear {
+                if WhatsNew.shouldShowOnLaunch() { openWindow(id: "whats-new") }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                machine.shutdown()
+            }
+            // Agents and the self-test ask for networks' windows.
+            .onReceive(NotificationCenter.default.publisher(for: NetworkStudioCommands.openRequest)) { note in
+                if let url = note.object as? URL { NetworkStudioCommands.open(url, openWindow: openWindow) }
+            }
+    }
+}
+
+/// A machine's window: its picture, toolbar and menus. A standalone
+/// machine's, or a network station's in its own window.
+struct MachineScreen: View {
+    @Bindable var machine: MachineController
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
         Group {
             if let host = machine.host {
                 EmulatorView(machine: machine, host: host, style: machine.displayStyle,
@@ -320,11 +360,18 @@ struct MachineWindow: View {
                 machine.offerFilesForHardDisc(urls)
                 return true
             }
+            if url.pathExtension.lowercased() == NetworkPackage.fileExtension {
+                NetworkStudioCommands.open(url, openWindow: openWindow)
+                return true
+            }
             return machine.open(url)
         }
-        .onOpenURL { _ = machine.open($0) }
-        .onAppear {
-            if WhatsNew.shouldShowOnLaunch() { openWindow(id: "whats-new") }
+        .onOpenURL { url in
+            if url.pathExtension.lowercased() == NetworkPackage.fileExtension {
+                NetworkStudioCommands.open(url, openWindow: openWindow)
+            } else {
+                _ = machine.open(url)
+            }
         }
         .sheet(isPresented: $machine.showingTimeline) { RewindSheet(machine: machine) }
         .onChange(of: machine.debuggerRequested) {
@@ -338,9 +385,6 @@ struct MachineWindow: View {
                 machine.configureRequested = false
                 openWindow(id: "configure", value: machine.id)
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
-            machine.shutdown()
         }
     }
 }

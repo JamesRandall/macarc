@@ -61,6 +61,8 @@ public final class IOC {
     var hdc: HD63463?
     /// The A5000 family's 82C711 (bank 1) and IOEB (bank 5).
     var superIO: SuperIO?
+    /// The Econet module in bank 2, when fitted.
+    var econet: EconetModule?
     var updateLines: (Bool, Bool) -> Void = { _, _ in }
     public var unknownAccess: ((String) -> Void)?
 
@@ -150,6 +152,10 @@ public final class IOC {
         case 1:
             if let superIO { return superIO.read(a) }
             return UInt32(fdc.read(Int((a >> 2) & 3)))
+        case 2:
+            if let econet { return UInt32(econet.read(Int((a >> 2) & 3), now: bus.ticks)) }
+            unknownAccess?(String(format: "IOC read bank 2 addr %07X", a))
+            return 0xFFFF_FFFF
         case 5:
             if let superIO { return superIO.readIOEB(a) }
             if let hdc, [0x08, 0x0C, 0x20, 0x24].contains(reg) { return hdc.read(reg) }
@@ -175,6 +181,10 @@ public final class IOC {
             writeInternal(reg, v)
         case 1:
             if let superIO { superIO.write(a, busValue) } else { fdc.write(Int((a >> 2) & 3), v) }
+        case 2:
+            if let econet { econet.write(Int((a >> 2) & 3), v, now: bus.ticks) } else {
+                unknownAccess?(String(format: "IOC write bank 2 addr %07X = %02X", a, v))
+            }
         case 5:
             if let superIO { superIO.writeIOEB(a, busValue); return }
             switch reg {
