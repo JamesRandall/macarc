@@ -74,6 +74,48 @@ public enum MandelbrotNetwork {
                                        bootOption: 2)
     }
 
+    /// The Guide's hard disc: a boot file that selects the network, logs
+    /// on as GUEST and leaves the teacher at a `*` prompt to type Mandel.
+    /// (Nothing of Acorn's on it: only MacArch's boot file.)
+    public static let guideBootFile = """
+        | Distributed Mandelbrot: the Guide
+        Net
+        Logon GUEST
+        Echo <22><12>
+        Echo Welcome to the Distributed Mandelbrot!
+        Echo
+        Echo This machine is the Guide. The other Archimedes on the network are the
+        Echo workers: they've started up from the file server, and they're waiting
+        Echo for something to do.
+        Echo
+        Echo To have them draw the Mandelbrot set together, type   Mandel   and press
+        Echo Return. The Guide hands out the picture a tile at a time; each worker
+        Echo works out its tiles and sends them back over Econet.
+        Echo
+        Echo Watch the workers' screens too. Try switching one off part way through:
+        Echo the others pick up its tiles. When the picture's done, press any key.
+        Echo
+        Echo To send the workers back to waiting, type   Mandel Stop
+        Echo
+        Gos
+
+        """
+
+    public static func guideItems() -> [ADFSHardDiscBuilder.Item] {
+        [ADFSHardDiscBuilder.Item(path: ["!Boot"], data: Array(guideBootFile.utf8), type: 0xFEB)]
+    }
+
+    /// Makes the Guide's hard disc at `path`.
+    public static func createGuideDisc(path: String, geometry: HardDiscGeometry) throws {
+        try ADFSHardDiscBuilder.create(path: path, geometry: geometry, name: "Guide", items: guideItems(), bootOption: 2)
+    }
+
+    /// The Guide's configuration: boot from its hard disc (ADFS drive 4),
+    /// with the file server's station for its log-on.
+    public static func guideCMOSSettings(fileServer station: Int = fileServer) -> [CMOSSetting] {
+        [.fileSystem(8), .drive(4), .boot, CMOSSetting(byte: 1, value: UInt8(clamping: station)), CMOSSetting(byte: 2, value: 0)]
+    }
+
     /// A worker's configuration: NetFS at start-up (FileSystem 5), the
     /// file server's station (bytes 1-2), and boot (byte 16 bit 4), so it
     /// logs on and runs its boot file at power-on.

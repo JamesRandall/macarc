@@ -45,15 +45,15 @@ public extension AgentTools {
                                 "station": prop("integer", "Only frames to or from this station"),
                                 "problems_only": prop("boolean", "Only collided or aborted frames")])],
         ["name": "network_create",
-         "description": "Makes a new network from a template (two_archimedes; school_classroom: four A3000s, a file server and a clock; family: an A310, A440/1, A3000 and A5000; distributed_mandelbrot: the Distributed Mandelbrot demo, a Guide (A5000, station 1), four A3000 workers that boot from the network, a file server and a clock; empty), saves it in Documents/MacArch Networks and opens it, its machines switched on. Returns its machines. A file server is set up with Level 4 by network_set_up_level4 (for distributed_mandelbrot, with the demo's programs and the workers' boot file; then power cycle the workers).",
+         "description": "Makes a new network from a template (two_archimedes; school_classroom: four A3000s, a file server and a clock; family: an A310, A440/1, A3000 and A5000; distributed_mandelbrot: the Distributed Mandelbrot demo, a Guide (A5000, station 1), four A3000 workers that boot from the network, a file server and a clock; empty), saves it in Documents/MacArch Networks and opens it, its machines switched on. Returns its machines. A template's file server comes set up with Level 4 (for distributed_mandelbrot, with the demo's programs; the workers and Guide wait about 30 s for it, then type Mandel on the Guide).",
          "inputSchema": schema(["template": ["type": "string", "enum": ["two_archimedes", "school_classroom", "family", "distributed_mandelbrot", "empty"]],
                                 "name": prop("string", "The network's name (default: the template's)")], required: ["template"])],
         ["name": "network_open",
          "description": "Opens a saved network (a .macarchnet package) and switches on its machines.",
          "inputSchema": schema(["path": prop("string", "The .macarchnet package")], required: ["path"])],
         ["name": "network_set_up_level4",
-         "description": "Sets a network's file server up with Acorn's Level 4 File Server from the user's Level 4 disc image (Release 3's \"Level 4\" disc or Issue 2's \"FileServer\" disc): a new hard disc that starts the server when the machine does. Other machines then log on with *I AM SYST.",
-         "inputSchema": schema(["machine": machineProp, "disc": prop("string", "Path of the Level 4 disc image")], required: ["machine", "disc"])],
+         "description": "Sets a machine up as a file server with Acorn's Level 4 File Server, which MacArch includes (or from another Level 4 disc image): a new hard disc that starts the server when the machine does. Other machines then log on with *I AM SYST.",
+         "inputSchema": schema(["machine": machineProp, "disc": prop("string", "Path of a Level 4 disc image (default: the one MacArch includes)")], required: ["machine"])],
     ]
 }
 

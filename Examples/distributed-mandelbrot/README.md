@@ -11,16 +11,14 @@ RISC OS's own Econet module. [protocol.md](protocol.md) is the contract.
 
 1. File ▸ New Network… ▸ **Distributed Mandelbrot**: a Guide (an A5000 on
    station 1), four A3000 workers (stations 2-5), a file server on
-   station 254 and a clock.
-2. Select the File Server and Set Up Level 4… with your Level 4 disc
-   (Release 3's "Level 4" disc, or Issue 2's "FileServer" disc). MacArch
-   builds its hard disc with the demo's programs in `$.LIBRARY`.
-3. The server and the workers start again. The workers wait for the
-   server to come up (about 30 s), then boot from the network into
-   `Worker` and wait for a coordinator. (Whenever the network opens, the
-   workers wait for the server like this.)
-4. On the Guide, press F12 and type `*I AM GUEST`, then `*Mandel`. Mandel
-   finds the workers, and the picture builds up. A key ends it.
+   station 254 and a clock. The server comes set up: Level 4 (MacArch
+   includes it) on its hard disc, with the demo's programs in `$.LIBRARY`.
+2. The server takes about 30 s to start; the workers and the Guide wait
+   for it. Then the workers boot from the network into `Worker` and wait
+   for a coordinator, and the Guide boots from its own hard disc, logs on
+   as GUEST and shows what to type.
+3. On the Guide, type `Mandel`. It finds the workers, and the picture
+   builds up. A key ends it.
 
 The studio's Mandelbrot view follows the render from the frames alone,
 and Traffic reads each message. Try switching a worker off part way: its

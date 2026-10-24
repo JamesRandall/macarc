@@ -309,10 +309,11 @@ struct NetworkFocus: View {
                 HStack(spacing: 0) {
                     strip(on, showing: main.id)
                     Divider()
-                    // A new tile for each machine: its screen view takes its
-                    // machine when it's made, so it mustn't be reused for another.
+                    // A new tile for each machine, and for a machine switched
+                    // off and on (setting up Level 4 does): its screen view
+                    // takes its machine when it's made.
                     StationTile(session: session, node: main, controller: controller, focused: true, openStation: openStation)
-                        .id(main.id)
+                        .id(ObjectIdentifier(controller))
                         .aspectRatio(NetworkCanvas.screenAspect, contentMode: .fit)
                         .padding(12)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)

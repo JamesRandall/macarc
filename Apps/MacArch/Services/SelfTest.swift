@@ -321,14 +321,10 @@ enum SelfTest {
             client.type("CAT\n")
             try? await Task.sleep(for: .seconds(4))
         }
-        // MACARCH_SELFTEST_MANDEL=<seconds>: the Distributed Mandelbrot demo: the Guide logs on as GUEST and runs
-        // Mandel, which has that long to draw before the capture.
+        // MACARCH_SELFTEST_MANDEL=<seconds>: the Distributed Mandelbrot demo: Mandel typed on the Guide (booted
+        // and logged on by then), which has that long to draw before the capture.
         if let wait = env["MACARCH_SELFTEST_MANDEL"].flatMap(Double.init),
-           let guide = session.project.stations.first(where: { $0.startup == .netFS }).flatMap({ session.controllers[$0.id] }) {
-            guide.keyDown(0x0C); try? await Task.sleep(for: .milliseconds(100)); guide.keyUp(0x0C)
-            try? await Task.sleep(for: .seconds(1))
-            guide.type("I AM GUEST\n")
-            try? await Task.sleep(for: .seconds(4))
+           let guide = session.project.stations.first(where: { $0.waitsForServer == true }).flatMap({ session.controllers[$0.id] }) {
             guide.type("Mandel\n")
             try? await Task.sleep(for: .seconds(wait))
         }

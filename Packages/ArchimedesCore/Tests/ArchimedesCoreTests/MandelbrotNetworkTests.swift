@@ -60,13 +60,17 @@ final class MandelbrotRig {
         return m
     }
 
-    /// The coordinator: an A5000 on NetFS, at its desktop.
+    /// The coordinator: the Guide, an A5000 that boots from its own hard
+    /// disc, logs on as GUEST and leaves a * prompt.
     func addCoordinator() throws {
+        let hd = folder.appendingPathComponent("guide.hdf").path
+        try MandelbrotNetwork.createGuideDisc(path: hd, geometry: HardDiscGeometry.idePresets[0].geometry)
         var c = MachineConfiguration(model: .a5000)
         c.romPaths = [rom]
         c.powerOnKeys = [0x34]
         c.econetStation = Self.coordinatorStation
-        c.cmosSettings = MandelbrotNetwork.coordinatorCMOSSettings()
+        c.hardDiscs = [hd]
+        c.cmosSettings = MandelbrotNetwork.guideCMOSSettings()
         coordinator = try Machine(configuration: c)
         net.add(coordinator)
     }
@@ -143,12 +147,9 @@ final class MandelbrotNetworkTests: XCTestCase {
         return rig
     }
 
-    /// Logs the coordinator on as GUEST at its command line, and runs Mandel.
+    /// The Guide's booted, logged on: the teacher types Mandel.
     func startMandel(_ rig: MandelbrotRig, _ command: String = "Mandel") {
-        rig.press(rig.coordinator, key: 0x0C) // F12: the command line
-        rig.run(seconds: 0.5)
-        rig.type(rig.coordinator, "I AM GUEST\n")
-        rig.run(seconds: 3)
+        XCTAssertTrue(rig.run(until: { rig.screen(rig.coordinator).contains("Mandel Stop") }, seconds: 30), rig.screen(rig.coordinator))
         rig.type(rig.coordinator, command + "\n")
     }
 

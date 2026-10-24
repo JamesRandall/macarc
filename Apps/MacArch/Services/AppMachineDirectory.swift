@@ -133,12 +133,10 @@ final class AppMachineDirectory: MachineDirectory, @unchecked Sendable {
         case "network_create", "network_open":
             return try open(name, a)
         case "network_set_up_level4":
-            guard let machine = a["machine"] as? String, let disc = a["disc"] as? String else {
-                throw ToolError(message: "missing_argument: machine and disc")
-            }
+            guard let machine = a["machine"] as? String else { throw ToolError(message: "missing_argument: machine") }
             let (session, node) = try find(machine)
-            let path = (disc as NSString).expandingTildeInPath
-            do { try session.setUpLevel4(node.id, disc: URL(fileURLWithPath: path)) } catch {
+            let disc = (a["disc"] as? String).map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+            do { try session.setUpLevel4(node.id, disc: disc) } catch {
                 throw ToolError(message: "set_up_failed: \(error.localizedDescription)")
             }
             return ToolOutput("\(node.name) is set up with the Level 4 File Server, and restarting if it was on. It takes about 30 s to start; then on another machine, *I AM SYST logs on.\n" + status(session))

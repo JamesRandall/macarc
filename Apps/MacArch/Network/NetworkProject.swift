@@ -243,6 +243,10 @@ struct NetworkNode: Codable, Equatable, Identifiable {
     var runsLevel4: Bool?
     /// What it starts up with: nil for its own discs, as configured.
     var startup: NetworkStartup?
+    /// It isn't switched on until the network's file server has had time
+    /// to start, as its start-up logs on to it. (Machines that boot from
+    /// the network always wait.)
+    var waitsForServer: Bool?
 
     var isMachine: Bool { kind != .clock }
 
@@ -268,11 +272,15 @@ enum NetworkStartup: String, Codable, CaseIterable {
     /// Booted from the network: NetFS logs on as BOOT at power-on and runs
     /// the boot file in BOOT's directory, as a school's technician set up.
     case networkBoot
+    /// Booted from its hard disc (ADFS drive 4), with the file server on
+    /// station 254 for anything it runs that logs on.
+    case hardDisc
 
     var title: String {
         switch self {
         case .netFS: "On the network"
         case .networkBoot: "Boots from the network"
+        case .hardDisc: "Boots from its hard disc"
         }
     }
 
@@ -280,6 +288,7 @@ enum NetworkStartup: String, Codable, CaseIterable {
         switch self {
         case .netFS: MandelbrotNetwork.coordinatorCMOSSettings()
         case .networkBoot: MandelbrotNetwork.workerCMOSSettings()
+        case .hardDisc: MandelbrotNetwork.guideCMOSSettings()
         }
     }
 }

@@ -34,6 +34,8 @@ xcrun actool "$PWD/Apps/MacArch/Resources/AppIcon.icon" --compile "$PWD/$APP/Con
 rm -f build/AppIcon-partial.plist
 # The release notes, for Help > What's New.
 cp WHATSNEW.md "$APP/Contents/Resources/WhatsNew.md"
+# Acorn's Level 4 File Server (Release 3's "Level 4" disc), which network templates' file servers are built from.
+cp Apps/MacArch/Resources/Level4.adf "$APP/Contents/Resources/Level4.adf"
 # ditto keeps the framework's symlinks.
 ditto "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 

@@ -1,3 +1,4 @@
+import ArchimedesCore
 import Foundation
 
 /// A network on disc: a `.macarchnet` package (a folder Finder shows as one
@@ -38,11 +39,24 @@ enum NetworkPackage {
         try encoder.encode(project).write(to: url.appendingPathComponent(manifestName), options: .atomic)
     }
 
-    /// A new network from a template, saved at `url`.
-    @discardableResult
+    /// A new network from a template, saved at `url`, ready to use: its
+    /// file server has Level 4 set up (MacArch includes it), and a demo's
+    /// machines have their discs.
+    @MainActor @discardableResult
     static func create(_ template: NetworkTemplate, named name: String? = nil, at url: URL) throws -> NetworkProject {
         var project = template.makeProject()
         if let name, !name.isEmpty { project.name = name }
+        try FileManager.default.createDirectory(at: mediaURL(in: url), withIntermediateDirectories: true)
+        if project.demo == .distributedMandelbrot, let guide = project.nodes.first(where: { $0.startup == .hardDisc }) {
+            let name = UUID().uuidString.prefix(8) + "-Guide.hdf"
+            try MandelbrotNetwork.createGuideDisc(path: mediaURL(in: url).appendingPathComponent(String(name)).path,
+                                                  geometry: HardDiscGeometry.idePresets[0].geometry)
+            project[guide.id]?.hardDiscs[0] = MediaReference(storedName: String(name), displayName: "Guide", originalPath: nil)
+        }
+        if let server = project.nodes.first(where: { $0.kind == .fileServer }) {
+            guard let disc = NetworkSession.includedLevel4Disc else { throw NetworkSession.Level4Problem.missing }
+            try NetworkSession.installLevel4(server.id, in: &project, package: url, disc: disc)
+        }
         try save(project, to: url)
         return project
     }
@@ -103,9 +117,9 @@ enum NetworkTemplate: String, CaseIterable, Identifiable {
     var summary: String {
         switch self {
         case .twoArchimedes: "The smallest network: two A3000s, stations 1 and 2, and a clock."
-        case .schoolClassroom: "Four A3000s and a file server on station 254, as a 1990s school had. The server runs Acorn's Level 4 File Server, from discs you supply."
+        case .schoolClassroom: "Four A3000s and a file server on station 254, as a 1990s school had. The server runs Acorn's Level 4 File Server."
         case .family: "An A310, an A440/1, an A3000 and an A5000 side by side, from 1987 to 1991, on one network."
-        case .distributedMandelbrot: "Four A3000s draw the Mandelbrot set between them, over Econet, for a Guide that hands out the tiles. They boot from a Level 4 File Server, from discs you supply."
+        case .distributedMandelbrot: "Four A3000s boot from a Level 4 File Server and draw the Mandelbrot set between them, over Econet. On the Guide, type Mandel."
         case .empty: "Just the clock. Add machines from the palette."
         }
     }
@@ -145,7 +159,8 @@ enum NetworkTemplate: String, CaseIterable, Identifiable {
             // The workers boot from the server into Worker; the Guide types
             // Mandel. (Examples/distributed-mandelbrot/protocol.md)
             var guide = station("Guide", 1, -2 * s, StationSetup(model: .a5000))
-            guide.startup = .netFS
+            guide.startup = .hardDisc
+            guide.waitsForServer = true
             let workers = (0..<4).map { i -> NetworkNode in
                 var worker = station("Worker \(i + 1)", i + 2, (Double(i) - 1) * s)
                 worker.startup = .networkBoot

@@ -310,7 +310,9 @@ final class NetworkSession: StationOwner {
     /// The ROM for a machine: the version it asks for from the ROMs the
     /// user has added (RISC OS 3 where 2 can't drive the hardware), else
     /// the one chosen in Settings.
-    func romPath(for setup: StationSetup) -> String? {
+    func romPath(for setup: StationSetup) -> String? { Self.romPath(for: setup) }
+
+    static func romPath(for setup: StationSetup) -> String? {
         let library = AppSettings.shared.romLibrary
         let usable = library.filter { !(setup.model.hasNewIO && $0.version.hasPrefix("RISC OS 2")) }
         if let wanted = setup.rom, let entry = usable.first(where: { $0.version.hasPrefix(wanted) }) { return entry.path }
@@ -351,7 +353,7 @@ final class NetworkSession: StationOwner {
     /// Whether a machine that boots from the network has to wait: a Level
     /// 4 server on this network is on, but hasn't been for long.
     private func waitsForServer(_ node: NetworkNode) -> Bool {
-        guard node.startup == .networkBoot else { return false }
+        guard node.startup == .networkBoot || node.waitsForServer == true else { return false }
         let now = network.status.ticks
         return project.nodes.contains { server in
             server.kind == .fileServer && server.runsLevel4 == true && isOn(server.id)
@@ -440,44 +442,67 @@ final class NetworkSession: StationOwner {
         return node.startup?.cmosSettings ?? []
     }
 
-    private static let level4DiscKey = "MacArchLevel4Disc"
-
-    /// Sets a file server up from the user's Level 4 disc: a new hard disc
-    /// with the server on it, which starts when the machine does. Asks
-    /// for the disc (starting where the last one was).
+    /// Sets a file server up with Acorn's Level 4 File Server, which
+    /// MacArch includes: a new hard disc with the server on it, which
+    /// starts when the machine does.
     func setUpLevel4(_ id: UUID) {
-        guard let node = project[id], node.isMachine else { return }
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = MachineController.discTypes
-        panel.allowsOtherFileTypes = true
-        panel.message = "Choose Acorn's Level 4 File Server disc: \"Level 4\" from Release 3, or \"FileServer\" from Issue 2."
-        panel.prompt = "Set Up"
-        if let last = AppSettings.store.string(forKey: Self.level4DiscKey) {
-            panel.directoryURL = URL(fileURLWithPath: last).deletingLastPathComponent()
-        }
-        guard panel.runModal() == .OK, let source = panel.url else { return }
         do {
-            try setUpLevel4(id, disc: source)
-            AppSettings.store.set(source.path, forKey: Self.level4DiscKey)
+            try setUpLevel4(id, disc: nil)
         } catch {
             NSAlert(error: error).runModal()
         }
     }
 
     enum Level4Problem: LocalizedError {
-        case needsRISCOS3, noHardDisc(MachineModel)
+        case needsRISCOS3, noHardDisc(MachineModel), missing
         var errorDescription: String? {
             switch self {
-            case .needsRISCOS3: "This Level 4 File Server needs RISC OS 3.10 or later. Add a RISC OS 3 ROM in Settings ▸ ROMs."
+            case .needsRISCOS3: "Level 4 File Server needs RISC OS 3.10 or later. Add a RISC OS 3 ROM in Settings ▸ ROMs."
             case .noHardDisc(let model): "The \(model.rawValue) has no hard disc interface. Choose another model for the server."
+            case .missing: "MacArch's copy of the Level 4 File Server is missing from the app."
             }
         }
     }
 
-    /// Sets up the server from the Level 4 disc image at `disc`.
-    func setUpLevel4(_ id: UUID, disc: URL) throws {
+    /// The Level 4 File Server disc MacArch includes (Release 3's "Level 4"
+    /// disc), or, run from the source tree, the one beside the sources.
+    static var includedLevel4Disc: [UInt8]? {
+        let url = Bundle.main.url(forResource: "Level4", withExtension: "adf")
+            ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/Level4.adf")
+        return FileManager.default.contents(atPath: url.path).map { [UInt8]($0) }
+    }
+
+    /// Sets up the server, from the Level 4 disc image at `disc` (nil: the
+    /// one MacArch includes). A server that's on restarts, and so do the
+    /// machines that boot from it.
+    func setUpLevel4(_ id: UUID, disc: URL?) throws {
+        let bytes: [UInt8]
+        if let disc {
+            guard let read = FileManager.default.contents(atPath: disc.path).map({ [UInt8]($0) }) else { throw MediaError.unreadable(disc.path) }
+            bytes = read
+        } else {
+            guard let included = Self.includedLevel4Disc else { throw Level4Problem.missing }
+            bytes = included
+        }
+        let wasOn = isOn(id)
+        var project = self.project
+        try Self.installLevel4(id, in: &project, package: url, disc: bytes)
+        if wasOn { powerOff(id, remember: false) }
+        update { $0 = project }
+        removeUnusedMedia()
+        if wasOn { powerOn(id) }
+        // Machines that boot from the network start again, and wait for it.
+        for node in project.nodes where node.startup == .networkBoot && isOn(node.id) {
+            powerOff(node.id, remember: false)
+            powerOn(node.id, remember: false)
+        }
+    }
+
+    /// Makes the server's hard disc in the package and sets the node up to
+    /// run it (RISC OS 3, Level 4's configuration). For a demo's network,
+    /// the disc has the demo's programs too.
+    static func installLevel4(_ id: UUID, in project: inout NetworkProject, package url: URL, disc bytes: [UInt8]) throws {
         guard var node = project[id], var setup = node.setup else { return }
-        guard let bytes = FileManager.default.contents(atPath: disc.path).map({ [UInt8]($0) }) else { throw MediaError.unreadable(disc.path) }
         guard Level4.isLevel4Disc(bytes) else { throw Level4.SetupError.notLevel4 }
         guard setup.model.hardDiscSlots > 0 else { throw Level4Problem.noHardDisc(setup.model) }
         // A server runs RISC OS 3 where it can (Release 3 must).
@@ -498,20 +523,11 @@ final class NetworkSession: StationOwner {
         case nil:
             try Level4.createServerDisc(path: path, geometry: geometry, fromDisc: bytes)
         }
-        let wasOn = isOn(id)
-        if wasOn { powerOff(id, remember: false) }
         node.setup = setup
         node.kind = .fileServer
         node.runsLevel4 = true
-        node.hardDiscs[0] = MediaReference(storedName: String(name), displayName: "File Server (Level 4)", originalPath: disc.path)
-        update { $0[id] = node }
-        removeUnusedMedia()
-        if wasOn { powerOn(id) }
-        // Machines that boot from the network start again, and wait for it.
-        for node in project.nodes where node.startup == .networkBoot && isOn(node.id) {
-            powerOff(node.id, remember: false)
-            powerOn(node.id, remember: false)
-        }
+        node.hardDiscs[0] = MediaReference(storedName: String(name), displayName: "File Server (Level 4)", originalPath: nil)
+        project[id] = node
     }
 
     private func removeUnusedMedia() {

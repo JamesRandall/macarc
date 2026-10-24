@@ -113,6 +113,10 @@ public final class EconetTrace {
     private var latest: [UInt16: Int] = [:]
     private var transactions = 0
 
+    /// The longest a data frame follows its scout's acknowledgement by:
+    /// 2 ms (it's well under 1 ms; a retry is centiseconds later).
+    static let turnaround: UInt64 = 48_000
+
     public init(capacity: Int = 4096) {
         self.capacity = capacity
     }
@@ -173,8 +177,11 @@ public final class EconetTrace {
         } else if frame.bytes.count == 4 {
             frame.kind = .acknowledgement
             frame.transaction = latest[either]
-        } else if let transaction = awaitingData[pair], let last = frames.last(where: { $0.transaction == transaction }),
-                  last.kind == .acknowledgement {
+        } else if let transaction = awaitingData[pair], let last = frames.last, last.transaction == transaction,
+                  last.kind == .acknowledgement, frame.start < last.end + Self.turnaround {
+            // (The data comes straight after its scout's acknowledgement:
+            // a frame later than that is the sender trying again, with a
+            // new scout, because its data was lost.)
             frame.kind = .data
             frame.transaction = transaction
             awaitingData[pair] = nil

@@ -164,3 +164,30 @@ final class MandelbrotProtocolTests: XCTestCase {
         XCTAssertEqual(observer.workers[3]?.state, .unresponsive)
     }
 }
+
+/// The trace's reading of the four-way handshake when a data frame is lost.
+final class EconetTraceHandshakeTests: XCTestCase {
+    func frame(_ trace: EconetTrace, from station: UInt8, _ bytes: [UInt8], at time: inout UInt64) {
+        for b in bytes { trace.observe(EconetLineEvent(time: time, station: station, symbol: .byte(b), collided: false)); time += 960 }
+        for _ in 0..<2 { trace.observe(EconetLineEvent(time: time, station: station, symbol: .check, collided: false)); time += 960 }
+        trace.observe(EconetLineEvent(time: time, station: station, symbol: .flag, collided: false))
+        time += 2_000
+    }
+
+    /// The scout's acknowledged, the data never comes, and 5 cs later the
+    /// sender tries again: the new scout is a scout, not the lost data.
+    func testRetryAfterLostDataIsAScout() {
+        let trace = EconetTrace()
+        var t: UInt64 = 0
+        frame(trace, from: 1, [3, 0, 1, 0, 0x80, 0xC1], at: &t)
+        frame(trace, from: 3, [1, 0, 3, 0], at: &t)
+        t += 5 * 240_000
+        frame(trace, from: 1, [3, 0, 1, 0, 0x80, 0xC1], at: &t)
+        frame(trace, from: 3, [1, 0, 3, 0], at: &t)
+        frame(trace, from: 1, [3, 0, 1, 0] + MandelbrotMessage(body: .complete(tiles: 300)).encoded(), at: &t)
+        XCTAssertEqual(trace.frames.map(\.kind), [.scout, .acknowledgement, .scout, .acknowledgement, .data])
+        var traffic = MandelbrotTraffic()
+        let readings = trace.frames.compactMap { traffic.read($0) }
+        XCTAssertEqual(readings.map(\.summary), ["COMPLETE 300 tiles → station 3"])
+    }
+}

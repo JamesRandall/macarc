@@ -168,9 +168,9 @@ struct NetworkMandelbrotView: View {
         var text = "When the Distributed Mandelbrot demo runs on this network, its picture builds up here from the frames on the line. "
         if session.project.demo == .distributedMandelbrot, let server = session.project.nodes.first(where: { $0.kind == .fileServer }),
            server.runsLevel4 != true {
-            text += "First set up the file server from your Level 4 disc (select it, then Set Up Level 4…): the workers then start again and boot from it. "
+            text += "First set up the file server (select it, then Set Up Level 4): the workers then start again and boot from it. "
         }
-        return text + "The workers boot from the file server into Worker and wait. On the Guide, press F12 and type *I AM GUEST, then *Mandel."
+        return text + "The workers boot from the file server into Worker and wait; the Guide boots and logs on. On the Guide, type Mandel."
     }
 
     private var observer: MandelbrotObserver { feed.observer }

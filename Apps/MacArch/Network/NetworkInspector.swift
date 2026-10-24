@@ -188,13 +188,13 @@ struct MachineInspector: View {
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
-                        Text("A file server is an Archimedes running Acorn's Level 4 File Server, which shares its hard disc with the other machines. MacArch doesn't include Level 4: set it up from your Level 4 disc (Release 3's \"Level 4\" disc, or Issue 2's \"FileServer\" disc), and MacArch makes a hard disc that starts it.")
+                        Text("A file server is an Archimedes running Acorn's Level 4 File Server, which shares its hard disc with the other machines. Set Up Level 4 makes it one: MacArch includes Level 4, and makes a hard disc that starts it.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    Button(node.runsLevel4 == true ? "Set Up Again…" : "Set Up Level 4…") { session.setUpLevel4(node.id) }
-                        .help("Makes a new hard disc for the server from the Level 4 disc. The server's old hard disc is replaced.")
+                    Button(node.runsLevel4 == true ? "Set Up Again" : "Set Up Level 4") { session.setUpLevel4(node.id) }
+                        .help("Makes a new hard disc for the server with Level 4 on it. The server's old hard disc is replaced.")
                     Text("RISC OS 3.10 and 3.11 machines should load !NetUtils (it's on the server) before copying files of 128K or more: without it, they can be corrupted.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -311,6 +311,7 @@ struct MachineInspector: View {
         case nil: "It starts from its own discs, as its CMOS says"
         case .netFS: "NetFS is selected at start-up, with the file server on station 254: *I AM (or the Econet icon) logs on. A machine that's on restarts."
         case .networkBoot: "At power-on NetFS logs on to station 254 as BOOT and runs the boot file in BOOT's directory, as a school's network boot did. A machine that's on restarts."
+        case .hardDisc: "It boots from its hard disc (ADFS drive 4), with the file server on station 254 for anything that logs on. A machine that's on restarts."
         }
     }
 
