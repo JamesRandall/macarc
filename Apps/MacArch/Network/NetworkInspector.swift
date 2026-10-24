@@ -157,6 +157,16 @@ struct MachineInspector: View {
                     }
                     .labelsHidden()
                 }
+                if !(node.kind == .fileServer && node.runsLevel4 == true) {
+                    LabeledContent("Starts up") {
+                        Picker("Starts up", selection: Binding(get: { node.startup }, set: { session.setStartup(node.id, $0) })) {
+                            Text("From its own discs").tag(NetworkStartup?.none)
+                            ForEach(NetworkStartup.allCases, id: \.self) { Text($0.title).tag(NetworkStartup?.some($0)) }
+                        }
+                        .labelsHidden()
+                    }
+                    .help(startupHelp)
+                }
             }
             .onAppear {
                 name = node.name
@@ -293,6 +303,14 @@ struct MachineInspector: View {
                 Button("Debugger") { openDebugger(node.id) }
                     .disabled(controller == nil)
             }
+        }
+    }
+
+    private var startupHelp: String {
+        switch node.startup {
+        case nil: "It starts from its own discs, as its CMOS says"
+        case .netFS: "NetFS is selected at start-up, with the file server on station 254: *I AM (or the Econet icon) logs on. A machine that's on restarts."
+        case .networkBoot: "At power-on NetFS logs on to station 254 as BOOT and runs the boot file in BOOT's directory, as a school's network boot did. A machine that's on restarts."
         }
     }
 

@@ -54,10 +54,12 @@ struct NetworkStudioView: View {
     @State private var showsInspector = true
     @State private var confirmingReset = false
     @State private var confirmingPowerOff = false
+    /// Follows the Distributed Mandelbrot demo once its view's been shown.
+    @State private var mandelbrot = MandelbrotFeed()
     @Environment(\.openWindow) private var openWindow
 
     enum Mode: String, CaseIterable {
-        case canvas, tiles, focus, traffic
+        case canvas, tiles, focus, traffic, mandelbrot
     }
 
     init(session: NetworkSession, mode: Mode? = nil) {
@@ -78,6 +80,8 @@ struct NetworkStudioView: View {
                     NetworkFocus(session: session, openStation: openStation)
                 case .traffic:
                     NetworkTrafficView(session: session)
+                case .mandelbrot:
+                    NetworkMandelbrotView(session: session, feed: mandelbrot)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -116,7 +120,7 @@ struct NetworkStudioView: View {
         switch mode {
         case .tiles, .focus:
             return session.focused.flatMap { session.controllers[$0] }
-        case .canvas, .traffic:
+        case .canvas, .traffic, .mandelbrot:
             guard session.selection.count == 1, let id = session.selection.first else { return nil }
             return session.controllers[id]
         }
@@ -144,6 +148,7 @@ struct NetworkStudioView: View {
                 Label("Tiles", systemImage: "square.grid.2x2").tag(Mode.tiles)
                 Label("Focus", systemImage: "rectangle.leadinghalf.inset.filled").tag(Mode.focus)
                 Label("Traffic", systemImage: "waveform.path").tag(Mode.traffic)
+                Label("Mandelbrot", systemImage: "square.grid.3x3.square").tag(Mode.mandelbrot)
             }
             .pickerStyle(.segmented)
             .help("Arrange the network, or use its machines side by side")
@@ -285,9 +290,9 @@ struct NetworkTiles: View {
     }
 }
 
-/// One machine large, with the keyboard, and the others that are on in a
-/// strip down the side, live. Click one in the strip to select it (for the
-/// inspector); double-click it to make it the large one.
+/// One machine large, with the keyboard, and every machine that's on in a
+/// strip down the left, live. Click one in the strip to make it the large
+/// one; it's selected too, for the inspector.
 struct NetworkFocus: View {
     @Bindable var session: NetworkSession
     var openStation: (UUID) -> Void
@@ -302,9 +307,12 @@ struct NetworkFocus: View {
             Divider()
             if let main, let controller = session.controllers[main.id] {
                 HStack(spacing: 0) {
-                    strip(on.filter { $0.id != main.id })
+                    strip(on, showing: main.id)
                     Divider()
+                    // A new tile for each machine: its screen view takes its
+                    // machine when it's made, so it mustn't be reused for another.
                     StationTile(session: session, node: main, controller: controller, focused: true, openStation: openStation)
+                        .id(main.id)
                         .aspectRatio(NetworkCanvas.screenAspect, contentMode: .fit)
                         .padding(12)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -335,18 +343,18 @@ struct NetworkFocus: View {
 
     private func show(_ id: UUID) {
         session.update { $0.workspace.focus = id }
+        session.selection = [id]
         session.focus(id)
     }
 
-    private func strip(_ others: [NetworkNode]) -> some View {
+    private func strip(_ on: [NetworkNode], showing: UUID) -> some View {
         ScrollView {
             LazyVStack(spacing: 10) {
-                ForEach(others) { node in
+                ForEach(on) { node in
                     if let controller = session.controllers[node.id] {
                         FocusThumbnail(session: session, node: node, controller: controller,
-                                       selected: session.selection.contains(node.id))
-                            .onTapGesture(count: 2) { show(node.id) }
-                            .onTapGesture { session.selection = [node.id] }
+                                       showing: node.id == showing)
+                            .onTapGesture { show(node.id) }
                     }
                 }
             }
@@ -357,7 +365,7 @@ struct NetworkFocus: View {
 
     private func focusBar(_ main: NetworkNode?) -> some View {
         HStack(spacing: 12) {
-            Text("Double-click a machine to bring it here")
+            Text("Click a machine to bring it here")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Spacer()
@@ -389,7 +397,7 @@ struct FocusThumbnail: View {
     let session: NetworkSession
     let node: NetworkNode
     let controller: MachineController
-    let selected: Bool
+    let showing: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -415,17 +423,13 @@ struct FocusThumbnail: View {
         .background(.background, in: RoundedRectangle(cornerRadius: 9))
         .overlay {
             RoundedRectangle(cornerRadius: 9)
-                .strokeBorder(selected ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: selected ? 2.5 : 1)
+                .strokeBorder(showing ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: showing ? 2.5 : 1)
         }
         .contentShape(RoundedRectangle(cornerRadius: 9))
-        .help("\(node.name): click to select, double-click to bring it here")
+        .help("\(node.name): click to bring it here")
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(node.name)\(selected ? ", selected" : "")")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction(named: "Bring Here") {
-            session.update { $0.workspace.focus = node.id }
-            session.focus(node.id)
-        }
+        .accessibilityLabel("\(node.name)\(showing ? ", shown large" : "")")
+        .accessibilityAddTraits(showing ? [.isButton, .isSelected] : .isButton)
     }
 }
 

@@ -291,6 +291,7 @@ public final class Machine {
         configureStationInCMOS()
         applyCMOSSettings()
         cpu.reset()
+        cpuHeldUntil = econet.map { UInt64($0.station) * Self.powerOnSkewPerStation } ?? 0
         poweredOn = true
         rtc.epochTicks = 0
         for k in configuration.powerOnKeys { keyboard.keyDown(k) }
@@ -303,6 +304,17 @@ public final class Machine {
             for k in configuration.powerOnKeys { schedule(InputEvent(tick: release, action: .keyUp(k))) }
         }
     }
+
+    /// A machine on a network leaves its power-on reset a little after the
+    /// others, by its station number: 97 µs a station. Real machines
+    /// switched on together never start in the same instant, but emulated
+    /// ones would, and identical machines then do everything at exactly
+    /// the same time, network transmissions too, so they collide for ever.
+    /// (Stations up to 103 apart are at least 97 µs apart on any
+    /// centisecond tick, longer than a byte takes to cross the line.)
+    static let powerOnSkewPerStation: UInt64 = 2_328
+    /// Until then, time passes but the CPU waits.
+    private var cpuHeldUntil: UInt64 = 0
 
     /// Reset button: restarts the CPU and MEMC but keeps RAM, CMOS and media.
     public func reset() {
@@ -359,6 +371,10 @@ public final class Machine {
         if !poweredOn { powerOn() }
         if isStoppedByDebugger { return .stopped }
         runTarget = target
+        while memc.ticks < min(target, cpuHeldUntil) {
+            scheduler.dispatch()
+            memc.ticks = min(target, cpuHeldUntil, scheduler.next)
+        }
         var remaining = maxInstructions
         while memc.ticks < target {
             if let (a, n) = watchLogical, let p = memc.debugTranslate(a) { memc.writeWatch = p...(p + n - 1) }

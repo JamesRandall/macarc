@@ -198,7 +198,7 @@ final class AppMachineDirectory: MachineDirectory, @unchecked Sendable {
         let url: URL
         if name == "network_create" {
             let templates: [String: NetworkTemplate] = ["two_archimedes": .twoArchimedes, "school_classroom": .schoolClassroom,
-                                                        "family": .family, "empty": .empty]
+                                                        "family": .family, "distributed_mandelbrot": .distributedMandelbrot, "empty": .empty]
             guard let template = (a["template"] as? String).flatMap({ templates[$0] }) else {
                 throw ToolError(message: "invalid_value: template must be one of \(templates.keys.sorted().joined(separator: ", "))")
             }

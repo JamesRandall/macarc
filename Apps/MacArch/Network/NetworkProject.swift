@@ -21,6 +21,10 @@ struct NetworkProject: Codable, Equatable {
     var nodes: [NetworkNode] = []
     var canvas = CanvasLayout()
     var workspace = Workspace()
+    /// The ready-made demo it was made for, if any: its file server gets
+    /// the demo's programs when Level 4's set up, and the studio shows
+    /// the demo's own view.
+    var demo: NetworkDemo?
 
     init(name: String, nodes: [NetworkNode] = []) {
         self.name = name
@@ -237,6 +241,8 @@ struct NetworkNode: Codable, Equatable, Identifiable {
     /// Its hard disc was set up to start Acorn's Level 4 File Server: it
     /// keeps the configuration the server needs (a file server only).
     var runsLevel4: Bool?
+    /// What it starts up with: nil for its own discs, as configured.
+    var startup: NetworkStartup?
 
     var isMachine: Bool { kind != .clock }
 
@@ -252,6 +258,37 @@ struct NetworkNode: Codable, Equatable, Identifiable {
     static func clock(at position: CanvasPoint) -> NetworkNode {
         NetworkNode(kind: .clock, name: "Clock", stationNumber: nil, setup: nil, position: position)
     }
+}
+
+/// What a machine starts up with, kept in its CMOS whenever it starts.
+enum NetworkStartup: String, Codable, CaseIterable {
+    /// NetFS selected (file server 254), but nobody logged on: *I AM or the
+    /// Econet icon does that.
+    case netFS
+    /// Booted from the network: NetFS logs on as BOOT at power-on and runs
+    /// the boot file in BOOT's directory, as a school's technician set up.
+    case networkBoot
+
+    var title: String {
+        switch self {
+        case .netFS: "On the network"
+        case .networkBoot: "Boots from the network"
+        }
+    }
+
+    var cmosSettings: [CMOSSetting] {
+        switch self {
+        case .netFS: MandelbrotNetwork.coordinatorCMOSSettings()
+        case .networkBoot: MandelbrotNetwork.workerCMOSSettings()
+        }
+    }
+}
+
+/// A ready-made demo a network can be.
+enum NetworkDemo: String, Codable {
+    /// Examples/distributed-mandelbrot: workers drawing the Mandelbrot set
+    /// between them, over Econet.
+    case distributedMandelbrot
 }
 
 /// A disc a station's drive holds: a copy kept in the network's package (so

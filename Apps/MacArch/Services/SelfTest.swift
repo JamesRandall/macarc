@@ -162,7 +162,7 @@ enum SelfTest {
                 }
             }
             // MACARCH_SELFTEST_NETWORK=TEMPLATE: make that network (in MACARCH_SELFTEST_NETWORK_DIR, else a
-            // temporary folder), open its studio (MACARCH_SELFTEST_NETWORK_MODE: canvas, tiles, focus or traffic),
+            // temporary folder), open its studio (MACARCH_SELFTEST_NETWORK_MODE: canvas, tiles, focus, traffic or mandelbrot),
             // let it run, and capture it (-network.png) with a report (.network.txt). MACARCH_SELFTEST_NETWORK_SEND=1
             // has station 1 send station 2 a message through RISC OS's Econet SWIs first.
             if let template = env["MACARCH_SELFTEST_NETWORK"].flatMap(NetworkTemplate.init(rawValue:)) {
@@ -320,6 +320,17 @@ enum SelfTest {
             try? await Task.sleep(for: .seconds(4))
             client.type("CAT\n")
             try? await Task.sleep(for: .seconds(4))
+        }
+        // MACARCH_SELFTEST_MANDEL=<seconds>: the Distributed Mandelbrot demo: the Guide logs on as GUEST and runs
+        // Mandel, which has that long to draw before the capture.
+        if let wait = env["MACARCH_SELFTEST_MANDEL"].flatMap(Double.init),
+           let guide = session.project.stations.first(where: { $0.startup == .netFS }).flatMap({ session.controllers[$0.id] }) {
+            guide.keyDown(0x0C); try? await Task.sleep(for: .milliseconds(100)); guide.keyUp(0x0C)
+            try? await Task.sleep(for: .seconds(1))
+            guide.type("I AM GUEST\n")
+            try? await Task.sleep(for: .seconds(4))
+            guide.type("Mandel\n")
+            try? await Task.sleep(for: .seconds(wait))
         }
         let status = session.network.status
         report += "machines on: \(session.controllers.count) of \(session.project.stations.count)\n"

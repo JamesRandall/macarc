@@ -13,6 +13,9 @@ struct NetworkTrafficView: View {
     @State private var problemsOnly = false
     @State private var search = ""
     @State private var recording = true
+    /// The Distributed Mandelbrot demo's messages, by transaction.
+    @State private var reader = MandelbrotTraffic()
+    @State private var readings: [Int: MandelbrotReading] = [:]
 
     static let refresh = 0.25
 
@@ -33,6 +36,12 @@ struct NetworkTrafficView: View {
             while !Task.isCancelled {
                 let newer = session.network.frames(after: frames.last?.id)
                 if !newer.isEmpty {
+                    for frame in newer {
+                        if let reading = reader.read(frame), let transaction = frame.transaction { readings[transaction] = reading }
+                    }
+                    if readings.count > 8192, let oldest = frames.first?.transaction {
+                        readings = readings.filter { $0.key >= oldest }
+                    }
                     frames.append(contentsOf: newer)
                     if frames.count > 4096 { frames.removeFirst(frames.count - 4096) }
                 }
@@ -74,6 +83,8 @@ struct NetworkTrafficView: View {
                 session.network.clearTrace()
                 frames = []
                 selection = nil
+                reader = MandelbrotTraffic()
+                readings = [:]
             } label: { Label("Clear", systemImage: "trash") }
                 .labelStyle(.iconOnly)
                 .help("Forget the frames recorded so far")
@@ -146,9 +157,25 @@ struct NetworkTrafficView: View {
         }
     }
 
-    private func summary(_ frame: EconetFrame) -> String { frame.summary }
+    /// The demo's message in a data frame, if it's one.
+    private func reading(_ frame: EconetFrame) -> MandelbrotReading? {
+        guard frame.kind == .data, let transaction = frame.transaction else { return nil }
+        return readings[transaction]
+    }
 
-    private func portName(_ frame: EconetFrame) -> String? { frame.port.flatMap(EconetFrame.portName) }
+    /// The frame, and what's in it where that's known.
+    private func summary(_ frame: EconetFrame) -> String {
+        reading(frame).map { frame.summary + " · " + $0.summary } ?? frame.summary
+    }
+
+    /// What a frame's port is for: the demo's name, if its data was the demo's.
+    private func portName(_ frame: EconetFrame) -> String? {
+        guard let port = frame.port else { return nil }
+        if let transaction = frame.transaction, readings[transaction] != nil, let name = MandelbrotProtocol.portName(port) {
+            return name
+        }
+        return EconetFrame.portName(port)
+    }
 
     private func name(_ station: UInt8) -> String {
         if station == 255 { return "Everyone" }
@@ -187,6 +214,9 @@ struct NetworkTrafficView: View {
                         if let name = portName(frame) { row("Port", name) }
                     }
                     .font(.callout)
+                    if let reading = reading(frame) {
+                        mandelbrot(reading)
+                    }
                     Text(Self.dump(frame.bytes))
                         .font(.system(.caption, design: .monospaced))
                         .textSelection(.enabled)
@@ -215,6 +245,30 @@ struct NetworkTrafficView: View {
             let text = String(line.map { $0 >= 32 && $0 < 127 ? Character(UnicodeScalar($0)) : "." })
             return String(format: "%04X  ", start) + hex.padding(toLength: 48, withPad: " ", startingAt: 0) + " " + text
         }.joined(separator: "\n")
+    }
+
+    /// The application layer: a Distributed Mandelbrot message.
+    private func mandelbrot(_ reading: MandelbrotReading) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Divider()
+            Label(MandelbrotProtocol.portName(reading.port) ?? "Mandelbrot", systemImage: "square.grid.3x3.square")
+                .font(.subheadline.weight(.semibold))
+            switch reading.message {
+            case .success(let message):
+                Text(message.summary(to: reading.to))
+                    .textSelection(.enabled)
+                Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 4) {
+                    ForEach(Array(message.fields.enumerated()), id: \.offset) { _, field in
+                        row(field.label, field.value)
+                    }
+                }
+                .font(.callout)
+            case .failure(let error):
+                Label("Not a Distributed Mandelbrot message: \(error.description)", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private func row(_ label: String, _ value: String) -> some View {

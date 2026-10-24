@@ -137,6 +137,13 @@ See `docs/progress.md`. Two differences from MacBeeb's ADLC were needed by RISC 
 - CMOS (`MachineConfiguration.cmosSettings`, kept at power-on, reset and through a CMOS reset): FileSystem 8 (ADFS, byte 5), Drive 4 (byte 11 bits 0-2), Boot (byte 16 bit 4), RMASize 1024K (byte 146, in pages: 32K pages at 4 MB). Byte numbers are OS_Byte 161's; the clock chip's RAM has bytes 0-191 at &40 and 192-239 at &10 (PRM, CMOS RAM allocation).
 - A client (RISC OS 3.11, CMOS defaults: file server 254) does `*NET`, `*I AM SYST`, `*CAT` and sees `Net::FileServer.$`.
 
+**Network boot** (as the Distributed Mandelbrot demo uses it, `Examples/distributed-mandelbrot`):
+- CMOS FileSystem 5 (NetFS), the file server in bytes 1-2, and Boot (byte 16 bit 4). At power-on RISC OS 3.11's NetFS does `Logon Boot` (built in: the user is always BOOT) and runs `!ArmBoot` (not `!Boot`) in BOOT's directory, by BOOT's boot option. Level 4's supplied Users file has BOOT with option 2 (*Run) and directory `BOOT`, so `$.BOOT.!ArmBoot` is the boot file.
+- Level 4 refuses to open a file a user doesn't own without public read ("Insufficient access"): files for everyone need attribute `r`.
+- Level 4's Users file is records of a name (21 characters), three bytes, a password (22 bytes, obscured), a directory (50 characters), then privilege, quota, boot option and one more byte; strings are length-prefixed and stored reversed, as BBC BASIC's PRINT# writes them.
+
+**Identical machines switched on together** do everything at exactly the same time, emulated, network transmissions too, so they collide for ever (seen as two workers' first broadcasts colliding on every retry). Real machines never start in the same instant, so a machine on a network leaves its power-on reset 97 µs a station after tick 0 (`Machine.powerOnSkewPerStation`).
+
 ## Joining MacBeeb's networks (design)
 
 - **Time:** network ticks are 24 MHz. MacBeeb's 2 MHz cycles are ×12 exactly. Both use a 16 µs quantum and a 16 µs line delay.

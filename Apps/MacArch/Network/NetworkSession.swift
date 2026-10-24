@@ -60,7 +60,7 @@ final class NetworkSession: StationOwner {
         project = loaded
         network = NetworkHost(clockRate: loaded.clockRate)
         network.start()
-        for node in project.nodes where node.isMachine && node.poweredOn {
+        for node in Self.serversFirst(project.nodes) where node.isMachine && node.poweredOn {
             powerOn(node.id, remember: false)
         }
         focus(project.workspace.tiles.first { controllers[$0] != nil } ?? project.stations.first { controllers[$0.id] != nil }?.id)
@@ -82,6 +82,7 @@ final class NetworkSession: StationOwner {
         let nodes = Set(project.nodes.filter { $0.stationNumber.map { sent.contains(UInt8(clamping: $0)) } ?? false }.map(\.id))
         if nodes != transmitting { transmitting = nodes }
         self.status = status
+        startWaitingMachines()
     }
 
     /// Closes the network: its machines stop, and it's saved.
@@ -227,6 +228,17 @@ final class NetworkSession: StationOwner {
         return nil
     }
 
+    /// Changes what a machine starts up with (it's kept in CMOS): a
+    /// machine that's on restarts.
+    func setStartup(_ id: UUID, _ startup: NetworkStartup?) {
+        guard project[id]?.startup != startup else { return }
+        update { $0[id]?.startup = startup }
+        if isOn(id) {
+            powerOff(id, remember: false)
+            powerOn(id, remember: false)
+        }
+    }
+
     /// Changes a machine's hardware: a machine that's on is power cycled.
     func setSetup(_ id: UUID, _ setup: StationSetup) {
         if let controller = controllers[id] {
@@ -244,6 +256,13 @@ final class NetworkSession: StationOwner {
     /// Switches a machine on: a fresh machine, as at power on.
     func powerOn(_ id: UUID, remember: Bool = true) {
         guard controllers[id] == nil, let node = project[id], node.isMachine, let setup = node.setup else { return }
+        if waitsForServer(node) {
+            waitingForServer.insert(id)
+            if remember { update { $0[id]?.poweredOn = true } }
+            return
+        }
+        waitingForServer.remove(id)
+        if node.kind == .fileServer && node.runsLevel4 == true { serverStarted[id] = network.status.ticks }
         do {
             let (machine, cmos, rom, discs) = try makeMachine(node, setup)
             let controller = MachineController(station: id, machine: machine, cmosPath: cmos, romPath: rom,
@@ -301,6 +320,7 @@ final class NetworkSession: StationOwner {
 
     /// Switches a machine off: it stops, and what's in its memory is gone.
     func powerOff(_ id: UUID, remember: Bool = true) {
+        if waitingForServer.remove(id) != nil, remember { update { $0[id]?.poweredOn = false } }
         guard let controller = controllers.removeValue(forKey: id) else { return }
         controller.detachFromNetwork()
         network.removeStation(id: id)
@@ -309,7 +329,43 @@ final class NetworkSession: StationOwner {
         if remember { update { $0[id]?.poweredOn = false } }
     }
 
-    func togglePower(_ id: UUID) { isOn(id) ? powerOff(id) : powerOn(id) }
+    func togglePower(_ id: UUID) { isOn(id) || waitingForServer.contains(id) ? powerOff(id) : powerOn(id) }
+
+    // MARK: Network boot
+
+    /// Machines that boot from the network, held off until the file
+    /// server's had time to start: it takes about 30 s, and a machine that
+    /// boots before it's ready finds nobody to log on to. (A classroom's
+    /// server was on first.)
+    private(set) var waitingForServer: Set<UUID> = []
+    /// When each Level 4 server was switched on, in network ticks.
+    @ObservationIgnored private var serverStarted: [UUID: UInt64] = [:]
+    /// From power-on to Level 4's "Ready", with some to spare.
+    static let serverStartTicks = 35 * EconetTime.ticksPerSecond
+
+    /// File servers, then the rest, in order.
+    static func serversFirst(_ nodes: [NetworkNode]) -> [NetworkNode] {
+        nodes.filter { $0.kind == .fileServer } + nodes.filter { $0.kind != .fileServer }
+    }
+
+    /// Whether a machine that boots from the network has to wait: a Level
+    /// 4 server on this network is on, but hasn't been for long.
+    private func waitsForServer(_ node: NetworkNode) -> Bool {
+        guard node.startup == .networkBoot else { return false }
+        let now = network.status.ticks
+        return project.nodes.contains { server in
+            server.kind == .fileServer && server.runsLevel4 == true && isOn(server.id)
+                && serverStarted[server.id].map { now < $0 + Self.serverStartTicks } ?? false
+        }
+    }
+
+    /// Those that were waiting and needn't now.
+    private func startWaitingMachines() {
+        for id in waitingForServer {
+            guard let node = project[id] else { waitingForServer.remove(id); continue }
+            if !waitsForServer(node) { powerOn(id, remember: false) }
+        }
+    }
 
     /// Off and on again.
     func coldBoot(_ id: UUID) {
@@ -326,7 +382,7 @@ final class NetworkSession: StationOwner {
     func setSuspended(_ id: UUID, _ suspended: Bool) { controllers[id]?.setPaused(suspended) }
 
     func powerOnAll() {
-        for node in project.nodes where node.isMachine { powerOn(node.id) }
+        for node in Self.serversFirst(project.nodes) where node.isMachine { powerOn(node.id) }
     }
 
     func powerOffAll() {
@@ -380,7 +436,8 @@ final class NetworkSession: StationOwner {
     /// What a machine keeps in CMOS: a Level 4 server boots from its hard
     /// disc with the memory the server needs.
     func cmosSettings(for node: NetworkNode, ramKB: Int) -> [CMOSSetting] {
-        node.kind == .fileServer && node.runsLevel4 == true ? Level4.cmosSettings(ramKB: ramKB) : []
+        if node.kind == .fileServer && node.runsLevel4 == true { return Level4.cmosSettings(ramKB: ramKB) }
+        return node.startup?.cmosSettings ?? []
     }
 
     private static let level4DiscKey = "MacArchLevel4Disc"
@@ -433,7 +490,14 @@ final class NetworkSession: StationOwner {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let name = UUID().uuidString.prefix(8) + "-FileServer.hdf"
         let geometry = setup.model.hasIDE ? HardDiscGeometry.idePresets[0].geometry : HardDiscGeometry(cylinders: 615, heads: 4)
-        try Level4.createServerDisc(path: folder.appendingPathComponent(String(name)).path, geometry: geometry, fromDisc: bytes)
+        let path = folder.appendingPathComponent(String(name)).path
+        switch project.demo {
+        case .distributedMandelbrot:
+            // With the demo's programs, and its workers' boot file.
+            try MandelbrotNetwork.createFileServerDisc(path: path, geometry: geometry, fromLevel4Disc: bytes)
+        case nil:
+            try Level4.createServerDisc(path: path, geometry: geometry, fromDisc: bytes)
+        }
         let wasOn = isOn(id)
         if wasOn { powerOff(id, remember: false) }
         node.setup = setup
@@ -443,6 +507,11 @@ final class NetworkSession: StationOwner {
         update { $0[id] = node }
         removeUnusedMedia()
         if wasOn { powerOn(id) }
+        // Machines that boot from the network start again, and wait for it.
+        for node in project.nodes where node.startup == .networkBoot && isOn(node.id) {
+            powerOff(node.id, remember: false)
+            powerOn(node.id, remember: false)
+        }
     }
 
     private func removeUnusedMedia() {

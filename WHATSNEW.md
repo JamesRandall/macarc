@@ -15,6 +15,8 @@ Archimedes on a network: Econet, Acorn's Level 4 File Server, and a Network Stud
 
 - **Econet:** machines on a network have Econet modules, and RISC OS's own network software talks over the cable. RISC OS 2 and 3 machines talk to each other.
 - **Network Studio:** File ▸ New Network… (⇧⌘N) starts from Two Archimedes, School Classroom, The Archimedes Family or an empty network. Draw machines on a canvas, or see them as tiles or one at a time. Traffic shows every frame on the cable. Networks save themselves as `.macarchnet` documents in Documents ▸ MacArch Networks.
+- **Distributed Mandelbrot:** a new template, MacBeeb's demo for the Archimedes. Four A3000s boot from the file server and draw the Mandelbrot set between them over Econet, for a Guide that types `*Mandel`. Switch one off part way and its tiles go to the others; switch it back on and it joins in. The studio's new Mandelbrot view follows the render from the frames on the cable, and Traffic reads its messages.
+- **Network boot:** a machine's inspector sets it to boot from the network: NetFS logs on to the file server as BOOT at power-on and runs its boot file, as a school's machines did.
 - **File server:** set a network's File Server up with Level 4 from your own Level 4 disc (Release 3 or Issue 2). MacArch builds a hard disc that starts the server, and the other machines log on with `*I AM SYST`.
 - **Faster big networks:** when a network can't keep up on one processor core, its machines are spread over more.
 - **AI agents:** every MCP tool can drive a network's machine, and new tools list, power, pause and trace networks, and set up the file server.

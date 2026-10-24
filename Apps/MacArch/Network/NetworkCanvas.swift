@@ -564,10 +564,12 @@ struct MachineCard: View {
                 StationThumbnail(cache: session.thumbnails, id: node.id, host: host)
             } else if controller == nil {
                 VStack(spacing: 4) {
-                    Image(systemName: "power")
+                    let waiting = session.waitingForServer.contains(node.id)
+                    Image(systemName: waiting ? "hourglass" : "power")
                         .font(.title2)
-                    Text("Off")
+                    Text(waiting ? "Waiting for the file server" : "Off")
                         .font(.caption)
+                        .multilineTextAlignment(.center)
                 }
                 .foregroundStyle(.white.opacity(0.45))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -86,7 +86,7 @@ enum NetworkPackage {
 
 /// Ready-made networks to start from.
 enum NetworkTemplate: String, CaseIterable, Identifiable {
-    case twoArchimedes, schoolClassroom, family, empty
+    case twoArchimedes, schoolClassroom, family, distributedMandelbrot, empty
 
     var id: String { rawValue }
 
@@ -95,6 +95,7 @@ enum NetworkTemplate: String, CaseIterable, Identifiable {
         case .twoArchimedes: "Two Archimedes"
         case .schoolClassroom: "School Classroom"
         case .family: "The Archimedes Family"
+        case .distributedMandelbrot: "Distributed Mandelbrot"
         case .empty: "Empty Network"
         }
     }
@@ -104,6 +105,7 @@ enum NetworkTemplate: String, CaseIterable, Identifiable {
         case .twoArchimedes: "The smallest network: two A3000s, stations 1 and 2, and a clock."
         case .schoolClassroom: "Four A3000s and a file server on station 254, as a 1990s school had. The server runs Acorn's Level 4 File Server, from discs you supply."
         case .family: "An A310, an A440/1, an A3000 and an A5000 side by side, from 1987 to 1991, on one network."
+        case .distributedMandelbrot: "Four A3000s draw the Mandelbrot set between them, over Econet, for a Guide that hands out the tiles. They boot from a Level 4 File Server, from discs you supply."
         case .empty: "Just the clock. Add machines from the palette."
         }
     }
@@ -113,6 +115,7 @@ enum NetworkTemplate: String, CaseIterable, Identifiable {
         case .twoArchimedes: "rectangle.on.rectangle"
         case .schoolClassroom: "building.columns"
         case .family: "square.stack.3d.up"
+        case .distributedMandelbrot: "square.grid.3x3.square"
         case .empty: "square.dashed"
         }
     }
@@ -138,6 +141,19 @@ enum NetworkTemplate: String, CaseIterable, Identifiable {
                              station("A3000", 3, 0.5 * s),
                              station("A5000", 4, 1.5 * s, StationSetup(model: .a5000)),
                              .clock(at: CanvasPoint(x: 0, y: 330))]
+        case .distributedMandelbrot:
+            // The workers boot from the server into Worker; the Guide types
+            // Mandel. (Examples/distributed-mandelbrot/protocol.md)
+            var guide = station("Guide", 1, -2 * s, StationSetup(model: .a5000))
+            guide.startup = .netFS
+            let workers = (0..<4).map { i -> NetworkNode in
+                var worker = station("Worker \(i + 1)", i + 2, (Double(i) - 1) * s)
+                worker.startup = .networkBoot
+                return worker
+            }
+            project.nodes = [guide] + workers
+                + [NetworkNode.fileServer(at: CanvasPoint(x: -s / 2, y: 330)), .clock(at: CanvasPoint(x: s / 2 + 40, y: 330))]
+            project.demo = .distributedMandelbrot
         case .empty:
             project.nodes = [.clock(at: CanvasPoint())]
         }
