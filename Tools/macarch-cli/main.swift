@@ -16,6 +16,7 @@ import Foundation
 // every @SECONDS time is relative to the snapshot point.
 //   macarch-cli assemble <source.s> [-o out.bin] [--symbols out.sym] [--list]
 //   macarch-cli disk-inspect <image>
+//   macarch-cli disk-files <image>
 //   macarch-cli rom-info <file|dir>
 //   macarch-cli manifest <directory>
 //
@@ -97,6 +98,23 @@ case "assemble":
 case "disk-inspect":
     guard let p = args.first else { fail("disk-inspect <image>", code: 1) }
     do { print(JSON.encode(try ADFSInspector.inspect(path: p))) } catch { fail("\(error)", code: 3) }
+
+case "disk-files":
+    // disk-files <image> [--extract folder]: every file on an ADFS D or E floppy, with its type
+    // and length (--extract copies them out, typed with ",xxx" suffixes)
+    guard let p = args.first else { fail("disk-files <image> [--extract folder]", code: 1) }
+    do {
+        for item in try ADFSDiscReader.read(path: p).items {
+            if let out = value("--extract") {
+                let typed = item.load & 0xFFF0_0000 == 0xFFF0_0000 ? String(format: ",%03x", (item.load >> 8) & 0xFFF) : ""
+                let url = item.path.dropLast().reduce(URL(fileURLWithPath: out)) { $0.appendingPathComponent($1) }
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+                try Data(item.data).write(to: url.appendingPathComponent(item.path.last! + typed))
+            }
+            let type = item.load & 0xFFF0_0000 == 0xFFF0_0000 ? String(format: "%03X", (item.load >> 8) & 0xFFF) : String(format: "%08X %08X", item.load, item.exec)
+            print("$." + item.path.joined(separator: "."), type, item.data.count)
+        }
+    } catch { fail("\(error)", code: 3) }
 
 case "hard-disc-create":
     // hard-disc-create <file> [cylinders heads [sectors]] [--ide] [--blank]  (default ST506 615 x 4, 20 MB; IDE 977 x 5 x 17, 40 MB; formatted)

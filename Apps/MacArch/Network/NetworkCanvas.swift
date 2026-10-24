@@ -226,6 +226,9 @@ struct NetworkCanvas: View {
             Button("Insert Disc…") { session.chooseDisc(for: node.id) }
             Button("Eject Disc") { session.eject(node.id) }
                 .disabled(node.discs[0] == nil)
+            if node.kind == .fileServer {
+                Button(node.runsLevel4 == true ? "Set Up Level 4 Again…" : "Set Up Level 4 File Server…") { session.setUpLevel4(node.id) }
+            }
             Divider()
             Button("Duplicate") { session.duplicate(node.id) }
         }

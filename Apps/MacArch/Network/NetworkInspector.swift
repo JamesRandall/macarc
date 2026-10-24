@@ -45,7 +45,8 @@ struct NetworkInspector: View {
                 LabeledContent("Machines", value: "\(session.project.stations.count), \(session.controllers.count) on")
                 LabeledContent("Clock", value: session.project.hasClock ? "Fitted" : "None")
                 if session.status.speed > 0 && !session.controllers.isEmpty {
-                    LabeledContent("Speed", value: String(format: "%.0f%% of real time", session.status.speed * 100))
+                    LabeledContent("Speed", value: String(format: "%.0f%% of real time", session.status.speed * 100)
+                                   + (session.status.threads > 1 ? " on \(session.status.threads) cores" : ""))
                 }
             }
             InspectorSection("Problems") {
@@ -170,7 +171,21 @@ struct MachineInspector: View {
                         LabeledContent("Console", value: line)
                             .font(.callout.monospaced())
                     }
-                    Text("A file server is an Archimedes with a hard disc running Acorn's Level 4 File Server, which serves its disc to the other machines. MacArch doesn't include Level 4: fit a hard disc with it set up (in the machine's window, File ▸ Hard Disc). On the other machines, *I AM SYST logs on, and the Filer's Econet icon shows the server.")
+                    if node.runsLevel4 == true {
+                        Label("Level 4 File Server set up", systemImage: "checkmark.circle")
+                        Text("Its hard disc starts the server when the machine does, and the server shares that disc. On the other machines, *I AM SYST at the command line logs on (no password); in the desktop, the Econet icon on the icon bar logs on and opens the server.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("A file server is an Archimedes running Acorn's Level 4 File Server, which shares its hard disc with the other machines. MacArch doesn't include Level 4: set it up from your Level 4 disc (Release 3's \"Level 4\" disc, or Issue 2's \"FileServer\" disc), and MacArch makes a hard disc that starts it.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Button(node.runsLevel4 == true ? "Set Up Again…" : "Set Up Level 4…") { session.setUpLevel4(node.id) }
+                        .help("Makes a new hard disc for the server from the Level 4 disc. The server's old hard disc is replaced.")
+                    Text("RISC OS 3.10 and 3.11 machines should load !NetUtils (it's on the server) before copying files of 128K or more: without it, they can be corrupted.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

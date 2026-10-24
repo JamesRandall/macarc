@@ -234,6 +234,9 @@ struct NetworkNode: Codable, Equatable, Identifiable {
     var poweredOn = true
     /// The clock's rate, in bits per second (the clock only).
     var clockRate: Int?
+    /// Its hard disc was set up to start Acorn's Level 4 File Server: it
+    /// keeps the configuration the server needs (a file server only).
+    var runsLevel4: Bool?
 
     var isMachine: Bool { kind != .clock }
 

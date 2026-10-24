@@ -32,7 +32,12 @@ final class AppAgentContext: DebugAdapterHost, @unchecked Sendable {
         let runsBetweenCalls = true
 
         func advance(ticks: UInt64) {
-            s.machine.run(ticks: ticks)
+            // A network's machine runs with the rest of its network, in step.
+            if s.host.isStation, let network = s.host.network {
+                network.runInline(ticks: ticks, including: s.host)
+            } else {
+                s.machine.run(ticks: ticks)
+            }
             s.rewinder.captureIfDue(s.machine)
         }
 
@@ -44,6 +49,9 @@ final class AppAgentContext: DebugAdapterHost, @unchecked Sendable {
 
         func powerCycle(_ change: HardwareChange?) throws {
             let old = s.machine
+            if s.host.isStation && change != nil {
+                throw ToolError(message: "a network's machine has its hardware set in the Network Studio's inspector; power_cycle without changes switches it off and on")
+            }
             guard let change else {
                 s.host.restoreProfileCMOS(into: old)
                 old.powerOn()
@@ -125,22 +133,33 @@ final class AppAgentContext: DebugAdapterHost, @unchecked Sendable {
     @MainActor
     static func startServer(for host: EmulatorHost, controller: MachineController) {
         startDebugAdapter(for: host, controller: controller)
+        if AppMachineDirectory.shared.standalone == nil {
+            AppMachineDirectory.shared.standalone = AppAgentContext(host: host, controller: controller)
+        }
+        startServer()
+        if server != nil && AppMachineDirectory.shared.standalone?.host === host { controller.servesAgents = true }
+    }
+
+    /// Serves agents (a network opening starts it too, with or without a
+    /// standalone machine).
+    @MainActor
+    static func startServer() {
         // Self-tests serve agents only when asked (on their own socket).
         guard server == nil, !AppSettings.isSelfTest || ProcessInfo.processInfo.environment["MACARCH_AGENT_SOCKET"] != nil else { return }
         configurePaths()
-        let s = AgentSocketServer(tools: LoggedTools(tools: AgentTools(context: AppAgentContext(host: host, controller: controller))))
+        let tools = AgentTools(context: StandaloneContext(), directory: AppMachineDirectory.shared)
+        let s = AgentSocketServer(tools: LoggedTools(tools: tools))
         s.onConnection = { connected in
             Task { @MainActor in
                 AgentLog.shared.add(connected ? .connected : .disconnected)
-                // The last agent leaving lets go of a hold.
-                if AgentLog.shared.connections == 0 { host.heldForAgent = false }
+                // The last agent leaving lets go of any holds.
+                if AgentLog.shared.connections == 0 { AppMachineDirectory.shared.releaseHolds() }
             }
         }
         do {
             try s.start()
             server = s
             AgentLog.shared.serverState = .serving
-            controller.servesAgents = true
         } catch AgentSocketServer.StartError.inUse {
             AgentLog.shared.serverState = .inUse
         } catch {
@@ -169,6 +188,17 @@ final class AppAgentContext: DebugAdapterHost, @unchecked Sendable {
         } catch {
             AgentLog.shared.debugAdapterState = "Not available on port \(port): \(error.localizedDescription)"
         }
+    }
+}
+
+/// The machine tools drive when they don't name one: the standalone
+/// window's, if there is one.
+final class StandaloneContext: AgentContext {
+    func perform<T>(_ body: @escaping (AgentSession) throws -> T) throws -> T {
+        guard let standalone = AppMachineDirectory.shared.standalone else {
+            throw ToolError(message: "no standalone machine window: name a network's machine with `machine` (list_machines shows them)")
+        }
+        return try standalone.perform(body)
     }
 }
 

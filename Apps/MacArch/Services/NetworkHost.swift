@@ -22,6 +22,8 @@ final class NetworkHost: @unchecked Sendable {
         var stoppedStations: Set<UUID> = []
         /// What each Econet station has put on the line, by station number.
         var traffic: [UInt8: Traffic] = [:]
+        /// Threads running the machines.
+        var threads = 1
     }
 
     /// A station's transmissions so far.
@@ -140,11 +142,15 @@ final class NetworkHost: @unchecked Sendable {
     // MARK: The network's thread
 
     /// The stations, in the order they run: by ID, so runs repeat.
-    private var stations: [(id: UUID, host: EmulatorHost)] = []
+    private var stations: [(id: UUID, host: EmulatorHost, slot: LockstepWorkers.Slot)] = []
     /// The stations that run this quantum.
     private var ready: [EmulatorHost] = []
+    private var readySlots: [LockstepWorkers.Slot] = []
     private var publishedPaused = false
     private var publishedStopped: Set<UUID> = []
+    /// Time was run on outside the wall clock's pacing (an agent's tool):
+    /// pace from now, rather than wait for the wall clock to catch up.
+    private var resyncClock = false
 
     /// Commands, stations' commands, and who's ready: only when something
     /// asked for attention (this would otherwise run every 16 µs).
@@ -158,7 +164,11 @@ final class NetworkHost: @unchecked Sendable {
             case .add(let id, let host):
                 stations.removeAll { $0.id == id }
                 host.powerOnForNetwork()
-                stations.append((id, host))
+                let slot = LockstepWorkers.Slot { [unowned self, unowned host] ticks in
+                    // Stopped in its debugger: look again before the next quantum.
+                    if !host.step(ticks: ticks) { needsAttention() }
+                }
+                stations.append((id, host, slot))
                 stations.sort { $0.id.uuidString < $1.id.uuidString }
             case .remove(let id):
                 if let station = stations.first(where: { $0.id == id }), let econet = station.host.lineMachine?.econet {
@@ -172,25 +182,21 @@ final class NetworkHost: @unchecked Sendable {
             }
         }
         ready.removeAll(keepingCapacity: true)
+        readySlots.removeAll(keepingCapacity: true)
         var stopped: Set<UUID> = []
         for station in stations {
             station.host.runCommands()
-            // A power cycle or a loaded state makes a new machine: it
-            // takes the old one's place on the line.
-            let machine = station.host.drivingMachine
-            if station.host.lineMachine !== machine {
-                if let old = station.host.lineMachine?.econet { line.detach(old) }
-                if let econet = machine?.econet { line.attach(econet) }
-                station.host.lineMachine = machine
-            }
+            let machine = plugIn(station.host)
             if station.host.readyToRun() {
                 ready.append(station.host)
+                readySlots.append(station.slot)
             } else if machine?.isStoppedByDebugger == true {
                 stopped.insert(station.id)
             }
         }
         let networkPaused = paused || (!stopped.isEmpty && pauseOnBreak)
-        if networkPaused { ready.removeAll() }
+        if networkPaused { ready.removeAll(); readySlots.removeAll() }
+        groups = []
         let running = Set(ready.compactMap { $0.lineMachine?.econet }.map(ObjectIdentifier.init))
         line.setRunning { running.contains(ObjectIdentifier($0)) }
         if networkPaused != publishedPaused || stopped != publishedStopped {
@@ -203,21 +209,122 @@ final class NetworkHost: @unchecked Sendable {
         }
     }
 
+    /// A power cycle or a loaded state makes a new machine: it takes the
+    /// old one's place on the line. Returns the station's machine.
+    @discardableResult
+    private func plugIn(_ host: EmulatorHost) -> Machine? {
+        let machine = host.drivingMachine
+        if host.lineMachine !== machine {
+            if let old = host.lineMachine?.econet { line.detach(old) }
+            if let econet = machine?.econet { line.attach(econet) }
+            host.lineMachine = machine
+        }
+        return machine
+    }
+
+    /// For a station's command (an agent's tool that runs its machine), on
+    /// the network's thread: runs the network on by `ticks` there and
+    /// then, every running station in step, and `host` even if it's held
+    /// for the agent or stopped. A debugger stop on `host` ends it early.
+    func runInline(ticks: UInt64, including host: EmulatorHost) {
+        guard stations.contains(where: { $0.host === host }) else { return }
+        plugIn(host)
+        let hosts = stations.map(\.host).filter { $0 === host || ($0.lineMachine != nil && $0.readyToRun()) }
+        let running = Set(hosts.compactMap { $0.lineMachine?.econet }.map(ObjectIdentifier.init))
+        line.setRunning { running.contains(ObjectIdentifier($0)) }
+        var left = ticks
+        while left > 0 {
+            let q = min(left, line.delay)
+            line.beginQuantum()
+            var stopped = false
+            for h in hosts where !h.step(ticks: q) && h === host { stopped = true }
+            line.endQuantum(ticks: q)
+            left -= q
+            if stopped { break }
+        }
+        resyncClock = true
+        needsAttention()
+    }
+
     /// One quantum: every ready station runs `line.delay` ticks, in turn.
     /// Returns whether anything ran.
     private func runQuantum() -> Bool {
         if lock.withLock({ attention }) { look() }
         guard !ready.isEmpty else { return false }
         line.beginQuantum()
-        for host in ready where !host.step(ticks: line.delay) {
-            // Stopped in its debugger: look again before the next quantum.
-            needsAttention()
+        if workers.count == 0 {
+            for slot in readySlots { slot.run(line.delay) }
+        } else {
+            if groups.count != workers.count + 1 { groups = LockstepWorkers.balance(readySlots, into: workers.count + 1) }
+            workers.run(groups, ticks: line.delay)
         }
         line.endQuantum(ticks: line.delay)
         return true
     }
 
+    // MARK: Threads
+
+    /// The extra threads, when one isn't enough.
+    private let workers = LockstepWorkers(name: "MacArch network")
+    /// The ready stations, split between the threads (empty: to be split).
+    private var groups: [[LockstepWorkers.Slot]] = []
+
+    /// MACARCH_NETWORK_THREADS fixes the count (for measuring).
+    static let fixedThreads = ProcessInfo.processInfo.environment["MACARCH_NETWORK_THREADS"].flatMap(Int.init)
+
+    /// A thread on trial: the machine time a second before it, and the
+    /// machines then.
+    private var trial: (work: Double, machines: Int)?
+    private var blockedAtMachines = 0
+    private var growBlockedUntil = ContinuousClock.now
+
+    private func setThreads(_ count: Int) {
+        workers.resize(to: max(0, count - 1))
+        groups = []
+    }
+
+    /// Once a second: another thread if the network's falling short of
+    /// real time and never rests (kept only if it helps), one fewer if it
+    /// rests a lot. (After MacBeeb's.)
+    private func adjustThreads(speed: Double, restedFraction: Double, limited: Bool) {
+        groups = [] // rebalanced on the costs just measured
+        if let fixed = Self.fixedThreads {
+            if workers.count != fixed - 1 { setThreads(fixed) }
+            return
+        }
+        let threads = workers.count + 1
+        let machines = stations.count
+        // Machine time a second: what more threads can raise.
+        let work = speed * Double(machines)
+        if let trial {
+            self.trial = nil
+            if trial.machines == machines && work < trial.work * 1.05 {
+                // The extra thread didn't help (by 5%): back to fewer, for a while.
+                setThreads(threads - 1)
+                growBlockedUntil = .now + .seconds(10)
+                blockedAtMachines = machines
+                return
+            }
+        }
+        // Machines added or removed: a new network, as far as threads go.
+        if machines != blockedAtMachines { growBlockedUntil = .now }
+        let falling = (limited ? speed < 0.98 : true) && restedFraction < 0.02
+        if falling && threads < LockstepWorkers.maxThreads && machines > threads && ContinuousClock.now >= growBlockedUntil {
+            trial = (work, machines)
+            setThreads(threads + 1)
+        } else if threads > 1 && limited && (1 - restedFraction) * Double(threads) / Double(threads - 1) < 0.7 {
+            setThreads(threads - 1)
+        }
+    }
+
     private func threadMain() {
+        defer { workers.stop() }
+        var rested = 0.0
+        func rest(_ microseconds: UInt32) {
+            let start = CACurrentMediaTime()
+            usleep(microseconds)
+            rested += CACurrentMediaTime() - start
+        }
         var wallStart = CACurrentMediaTime()
         var wallStartTicks = line.time
         var sampleStart = wallStart
@@ -233,10 +340,24 @@ final class NetworkHost: @unchecked Sendable {
             if now - sampleStart >= 1 {
                 let speed = Double(line.time - sampleTicks) / Double(EconetTime.ticksPerSecond) / (now - sampleStart)
                 let ticks = line.time
+                if line.time > sampleTicks {
+                    adjustThreads(speed: speed, restedFraction: rested / (now - sampleStart), limited: lock.withLock { speedLimitedFlag })
+                }
+                rested = 0
+                let threads = workers.count + 1
                 lock.withLock {
                     latestStatus.speed = speed
                     latestStatus.ticks = ticks
+                    latestStatus.threads = threads
                 }
+                sampleStart = now
+                sampleTicks = line.time
+            }
+            if resyncClock {
+                resyncClock = false
+                wallStart = now
+                wallStartTicks = line.time
+                // Nor is it counted in the speed.
                 sampleStart = now
                 sampleTicks = line.time
             }
@@ -246,7 +367,7 @@ final class NetworkHost: @unchecked Sendable {
                 let done = line.time - wallStartTicks
                 if done >= due {
                     if lock.withLock({ attention }) { look() }
-                    usleep(1000)
+                    rest(1000)
                     continue
                 }
                 // More than 0.1 s behind (the Mac was busy): carry on from
@@ -259,7 +380,7 @@ final class NetworkHost: @unchecked Sendable {
             var ran = false
             for _ in 0..<64 where runQuantum() { ran = true }
             if !ran {
-                usleep(5000)
+                rest(5000)
                 wallStart = CACurrentMediaTime()
                 wallStartTicks = line.time
             }

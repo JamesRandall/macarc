@@ -50,6 +50,7 @@ final class NetworkSession: StationOwner {
         if let session = open[key] { return session }
         let session = try NetworkSession(url: key)
         open[key] = session
+        AppAgentContext.startServer()
         return session
     }
 
@@ -272,6 +273,7 @@ final class NetworkSession: StationOwner {
         c.romPaths = [rom]
         c.hardDiscs = (0..<setup.model.hardDiscSlots).map { node.hardDiscs[$0].map { NetworkPackage.url(of: $0, in: url).path } }
         c.econetStation = node.stationNumber
+        c.cmosSettings = cmosSettings(for: node, ramKB: c.ramKB)
         let cmos = NetworkPackage.cmosURL(of: node.id, in: url).path
         // First boot, or a CMOS RISC OS never set up: Delete held resets it.
         if let d = FileManager.default.contents(atPath: cmos), !Machine.cmosNeverConfigured([UInt8](d)) {
@@ -373,6 +375,76 @@ final class NetworkSession: StationOwner {
         }
     }
 
+    // MARK: Level 4 File Server
+
+    /// What a machine keeps in CMOS: a Level 4 server boots from its hard
+    /// disc with the memory the server needs.
+    func cmosSettings(for node: NetworkNode, ramKB: Int) -> [CMOSSetting] {
+        node.kind == .fileServer && node.runsLevel4 == true ? Level4.cmosSettings(ramKB: ramKB) : []
+    }
+
+    private static let level4DiscKey = "MacArchLevel4Disc"
+
+    /// Sets a file server up from the user's Level 4 disc: a new hard disc
+    /// with the server on it, which starts when the machine does. Asks
+    /// for the disc (starting where the last one was).
+    func setUpLevel4(_ id: UUID) {
+        guard let node = project[id], node.isMachine else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = MachineController.discTypes
+        panel.allowsOtherFileTypes = true
+        panel.message = "Choose Acorn's Level 4 File Server disc: \"Level 4\" from Release 3, or \"FileServer\" from Issue 2."
+        panel.prompt = "Set Up"
+        if let last = AppSettings.store.string(forKey: Self.level4DiscKey) {
+            panel.directoryURL = URL(fileURLWithPath: last).deletingLastPathComponent()
+        }
+        guard panel.runModal() == .OK, let source = panel.url else { return }
+        do {
+            try setUpLevel4(id, disc: source)
+            AppSettings.store.set(source.path, forKey: Self.level4DiscKey)
+        } catch {
+            NSAlert(error: error).runModal()
+        }
+    }
+
+    enum Level4Problem: LocalizedError {
+        case needsRISCOS3, noHardDisc(MachineModel)
+        var errorDescription: String? {
+            switch self {
+            case .needsRISCOS3: "This Level 4 File Server needs RISC OS 3.10 or later. Add a RISC OS 3 ROM in Settings ▸ ROMs."
+            case .noHardDisc(let model): "The \(model.rawValue) has no hard disc interface. Choose another model for the server."
+            }
+        }
+    }
+
+    /// Sets up the server from the Level 4 disc image at `disc`.
+    func setUpLevel4(_ id: UUID, disc: URL) throws {
+        guard var node = project[id], var setup = node.setup else { return }
+        guard let bytes = FileManager.default.contents(atPath: disc.path).map({ [UInt8]($0) }) else { throw MediaError.unreadable(disc.path) }
+        guard Level4.isLevel4Disc(bytes) else { throw Level4.SetupError.notLevel4 }
+        guard setup.model.hardDiscSlots > 0 else { throw Level4Problem.noHardDisc(setup.model) }
+        // A server runs RISC OS 3 where it can (Release 3 must).
+        let riscOS3 = AppSettings.shared.romLibrary.filter { !$0.version.hasPrefix("RISC OS 2") }
+        let current = romPath(for: setup).flatMap { path in AppSettings.shared.romLibrary.first { $0.path == path } }
+        if current?.version.hasPrefix("RISC OS 2") ?? true {
+            if let rom = riscOS3.first { setup.rom = rom.version } else if Level4.requiresRISCOS3(bytes) { throw Level4Problem.needsRISCOS3 }
+        }
+        let folder = NetworkPackage.mediaURL(in: url)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let name = UUID().uuidString.prefix(8) + "-FileServer.hdf"
+        let geometry = setup.model.hasIDE ? HardDiscGeometry.idePresets[0].geometry : HardDiscGeometry(cylinders: 615, heads: 4)
+        try Level4.createServerDisc(path: folder.appendingPathComponent(String(name)).path, geometry: geometry, fromDisc: bytes)
+        let wasOn = isOn(id)
+        if wasOn { powerOff(id, remember: false) }
+        node.setup = setup
+        node.kind = .fileServer
+        node.runsLevel4 = true
+        node.hardDiscs[0] = MediaReference(storedName: String(name), displayName: "File Server (Level 4)", originalPath: disc.path)
+        update { $0[id] = node }
+        removeUnusedMedia()
+        if wasOn { powerOn(id) }
+    }
+
     private func removeUnusedMedia() {
         for old in NetworkPackage.unusedMedia(of: project, in: url) {
             try? FileManager.default.removeItem(at: old)
@@ -463,6 +535,11 @@ final class NetworkSession: StationOwner {
 
     func stationCMOSPath(_ controller: MachineController) -> String? {
         controller.stationID.map { NetworkPackage.cmosURL(of: $0, in: url).path }
+    }
+
+    func stationCMOSSettings(_ controller: MachineController) -> [CMOSSetting] {
+        guard let id = controller.stationID, let node = project[id] else { return [] }
+        return cmosSettings(for: node, ramKB: controller.ramKB)
     }
 
     func stationTitle(_ controller: MachineController) -> String {

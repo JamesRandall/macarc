@@ -1,9 +1,9 @@
-// swift-tools-version:5.9
+// swift-tools-version: 6.2
 import PackageDescription
 
 let package = Package(
     name: "MacArch",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v26)],
     products: [
         .executable(name: "macarch-cli", targets: ["macarch-cli"]),
         .executable(name: "macarch-mcp", targets: ["macarch-mcp"]),
@@ -43,5 +43,6 @@ let package = Package(
             // Sparkle.framework is embedded in Contents/Frameworks.
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
-    ]
+    ],
+    swiftLanguageModes: [.v5]
 )

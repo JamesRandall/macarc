@@ -153,6 +153,7 @@ struct MacArchApp: App {
             StationWindow(ref: ref)
         }
         .defaultSize(width: 800, height: 640)
+        .restorationBehavior(.disabled)
 
         Window("New Network", id: NetworkStartView.windowID) { NetworkStartView() }
             .windowResizability(.contentSize)

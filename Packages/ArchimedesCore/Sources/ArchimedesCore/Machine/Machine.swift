@@ -28,6 +28,9 @@ public struct MachineConfiguration: Codable, Sendable, Equatable {
     /// The Econet station number, with an Econet module fitted (nil: none).
     /// RISC OS reads it from CMOS byte 0, which is set to match.
     public var econetStation: Int?
+    /// Configuration RISC OS is to keep, as if set with *Configure: put
+    /// back at power-on, at reset and after a CMOS reset.
+    public var cmosSettings: [CMOSSetting] = []
 
     public init() {}
 
@@ -39,7 +42,7 @@ public struct MachineConfiguration: Codable, Sendable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case version, model, cpu, ramKB, romPaths, cmosPath, rtcEpoch, powerOnKeys, powerOnKeysMs, floppyController, monitor, hardDiscs, econetStation
+        case version, model, cpu, ramKB, romPaths, cmosPath, rtcEpoch, powerOnKeys, powerOnKeysMs, floppyController, monitor, hardDiscs, econetStation, cmosSettings
     }
 
     // Fields added after version 1 are optional, so older snapshots load.
@@ -58,7 +61,33 @@ public struct MachineConfiguration: Codable, Sendable, Equatable {
         monitor = try c.decodeIfPresent(String.self, forKey: .monitor) ?? "standard"
         hardDiscs = try c.decodeIfPresent([String?].self, forKey: .hardDiscs) ?? []
         econetStation = try c.decodeIfPresent(Int.self, forKey: .econetStation)
+        cmosSettings = try c.decodeIfPresent([CMOSSetting].self, forKey: .cmosSettings) ?? []
     }
+}
+
+/// Bits of one CMOS byte, by RISC OS's numbering (OS_Byte 161's: byte 0
+/// is the station number, 239 the checksum).
+public struct CMOSSetting: Codable, Sendable, Equatable, Hashable {
+    public var byte: Int
+    public var mask: UInt8
+    public var value: UInt8
+
+    public init(byte: Int, mask: UInt8 = 0xFF, value: UInt8) {
+        self.byte = byte; self.mask = mask; self.value = value & mask
+    }
+
+    /// Where the byte is in the clock chip's RAM: RISC OS's bytes 0-191
+    /// are at &40 onwards, 192-239 at &10.
+    public var physical: Int { byte < 192 ? byte + 0x40 : byte - 176 }
+
+    /// *Configure FileSystem (the filing system's number: ADFS is 8).
+    public static func fileSystem(_ number: UInt8) -> CMOSSetting { CMOSSetting(byte: 5, value: number) }
+    /// *Configure Drive (ADFS's drive at start-up).
+    public static func drive(_ n: UInt8) -> CMOSSetting { CMOSSetting(byte: 11, mask: 0x07, value: n) }
+    /// *Configure Boot: run the start-up disc's boot file at power-on.
+    public static let boot = CMOSSetting(byte: 16, mask: 0x10, value: 0x10)
+    /// *Configure RMASize, in pages.
+    public static func rmaSize(pages: UInt8) -> CMOSSetting { CMOSSetting(byte: 146, value: pages) }
 }
 
 public enum MachineError: Error, CustomStringConvertible {
@@ -229,11 +258,12 @@ public final class Machine {
         // count; the fitted hard discs are added as soon as it does, before
         // ADFS reads it.
         // The Econet station number is set the same way.
-        if (model.hardDiscSlots > 0 || econet != nil) && !configuration.powerOnKeys.isEmpty {
+        if (model.hardDiscSlots > 0 || econet != nil || !configuration.cmosSettings.isEmpty) && !configuration.powerOnKeys.isEmpty {
             rtc.ramWritten = { [unowned self] a in
                 guard self.ticks < MasterClock.ticks(milliseconds: 30_000) else { return }
                 if a == Self.cmosDrives && self.configureHardDiscsInCMOS() { self.cmosAdjusted = true }
                 if a == Self.cmosStation && self.configureStationInCMOS() { self.cmosAdjusted = true }
+                if self.configuration.cmosSettings.contains(where: { $0.physical == a }) && self.applyCMOSSettings() { self.cmosAdjusted = true }
                 // RISC OS then writes the checksum of what it set.
                 if a == 63 && self.cmosAdjusted { self.updateCMOSChecksum() }
             }
@@ -259,6 +289,7 @@ public final class Machine {
         econet?.reset(now: 0)
         configureHardDiscsInCMOS()
         configureStationInCMOS()
+        applyCMOSSettings()
         cpu.reset()
         poweredOn = true
         rtc.epochTicks = 0
@@ -278,6 +309,7 @@ public final class Machine {
         resetCount += 1
         configureHardDiscsInCMOS()
         configureStationInCMOS()
+        applyCMOSSettings()
         memc.reset()
         ioc.reset()
         fdc.masterReset()
@@ -523,6 +555,20 @@ public final class Machine {
         rtc.ram[Self.cmosStation] = e.station
         updateCMOSChecksum()
         return true
+    }
+
+    /// Puts back the configuration's CMOS settings. Returns whether any
+    /// byte changed.
+    @discardableResult
+    func applyCMOSSettings() -> Bool {
+        var changed = false
+        for setting in configuration.cmosSettings {
+            let a = setting.physical, old = rtc.ram[a]
+            let new = old & ~setting.mask | setting.value
+            if new != old { rtc.ram[a] = new; changed = true }
+        }
+        if changed { updateCMOSChecksum() }
+        return changed
     }
 
     /// RISC OS 3 checks byte 63 against the other configuration bytes

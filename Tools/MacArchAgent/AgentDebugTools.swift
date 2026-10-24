@@ -347,5 +347,7 @@ Debugging: set_breakpoint (execute, or read/write watchpoints, with conditions, 
 
 Writing programs: assemble takes an ARM source file in BBC BASIC V's assembler syntax as a file of its own: labels as .name (or name: or a name in column 1); instructions as on the ARM2/ARM3 (ADDEQS or ADDSEQ, LDR R0, =value, LDMFD R13!, {R0-R3, PC}^, SWI "OS_Write0" or SWI OS_Write0); directives ORG (default &8000), ENTRY, ALIGN, EQUB/EQUW/EQUD/EQUS (or DCB/DCW/DCD/DCS), SKIP, LTORG, INCLUDE, INCBIN, and name EQU value; comments after ; or \\ or //. It loads the code at the * prompt and runs it with *Go; end with SWI OS_Exit (or MOV PC, R14). Errors come back with their lines. Then set_breakpoint takes "file.s:line", and disassemble shows source lines.
 
+Networks (attached to the app): the Network Studio cables Archimedes together on an Econet. list_machines names them; any tool takes `machine` (a station's name, number or id) to drive that machine instead of the standalone one, and running one runs its whole network in step. network_create and network_open open networks; network_status, network_power, network_pause and network_trace (the frames on the cable) look after them; econet_status shows a machine's network chip. network_set_up_level4 sets a file server up from the user's Level 4 disc; other machines then log on with *I AM SYST at the command line. RISC OS's Econet SWIs work by number (&40000 CreateReceive, &40009 DoTransmit, &40001 ExamineReceive).
+
 The machine starts at the RISC OS desktop.
 """

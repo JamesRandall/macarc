@@ -270,7 +270,21 @@ enum SelfTest {
         var report = ""
         do { try NetworkPackage.create(template, at: url) } catch { report += "create failed: \(error)\n" }
         NotificationCenter.default.post(name: NetworkStudioCommands.openRequest, object: url)
-        let seconds = Double(env["MACARCH_SELFTEST_NETWORK_SECONDS"] ?? "") ?? 30
+        var seconds = Double(env["MACARCH_SELFTEST_NETWORK_SECONDS"] ?? "") ?? 30
+        // MACARCH_SELFTEST_NETWORK_FAST=1: as fast as the Mac can go (to measure).
+        if env["MACARCH_SELFTEST_NETWORK_FAST"] != nil {
+            try? await Task.sleep(for: .seconds(1))
+            seconds -= 1
+            NetworkSession.opened(url)?.network.setSpeedLimited(false)
+        }
+        // MACARCH_SELFTEST_LEVEL4=<Level 4 disc image>: the file server is set up from it.
+        if let disc = env["MACARCH_SELFTEST_LEVEL4"] {
+            try? await Task.sleep(for: .seconds(2))
+            seconds -= 2
+            if let session = NetworkSession.opened(url), let server = session.project.nodes.first(where: { $0.kind == .fileServer }) {
+                do { try session.setUpLevel4(server.id, disc: URL(fileURLWithPath: disc)); report += "level 4 set up\n" } catch { report += "level 4: \(error)\n" }
+            }
+        }
         try? await Task.sleep(for: .seconds(seconds))
         guard let session = NetworkSession.opened(url) else {
             report += "no session; open: \(NetworkSession.open.keys.map(\.path)); windows: \(NSApp.windows.map(\.title))\n"
@@ -295,9 +309,21 @@ enum SelfTest {
                 try? await Task.sleep(for: .seconds(4))
             }
         }
+        // With Level 4 set up, the first station logs on and catalogues the server.
+        if env["MACARCH_SELFTEST_LEVEL4"] != nil,
+           let client = session.project.stations.first(where: { $0.kind == .station }).flatMap({ session.controllers[$0.id] }) {
+            client.keyDown(0x0C); try? await Task.sleep(for: .milliseconds(100)); client.keyUp(0x0C)
+            try? await Task.sleep(for: .seconds(1))
+            client.type("NET\n")
+            try? await Task.sleep(for: .seconds(1))
+            client.type("I AM SYST\n")
+            try? await Task.sleep(for: .seconds(4))
+            client.type("CAT\n")
+            try? await Task.sleep(for: .seconds(4))
+        }
         let status = session.network.status
         report += "machines on: \(session.controllers.count) of \(session.project.stations.count)\n"
-        report += String(format: "speed: %.2f\n", status.speed)
+        report += String(format: "speed: %.2f on %d threads\n", status.speed, status.threads)
         report += "frames: \(session.network.frames().map { "\($0.transmitter):\($0.kind.rawValue)" }.joined(separator: " "))\n"
         for node in session.project.stations {
             guard let host = session.controllers[node.id]?.host else { report += "\(node.name): off\n"; continue }

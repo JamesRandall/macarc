@@ -130,6 +130,13 @@ This is Acorn's file server for an Archimedes, developed with Oak Solutions. Its
 
 See `docs/progress.md`. Two differences from MacBeeb's ADLC were needed by RISC OS (TDRA and RDA as level interrupts; a station's receiver hearing its own transmission).
 
+**Level 4, as set up by MacArch** (`ArchimedesCore/Econet/Level4.swift`, tested by `Level4Tests` against Release 3):
+- The disc is read with `ADFSDiscReader` (E format: new map, fragment addresses resolved). Release 3's `!Server.!Run` refuses RISC OS before 3.10; Issue 2's loads Econet 5.56 and NetFS 5.60 from its own !System instead.
+- The server's hard disc (old map, 20 MB ST506, or 40 MB IDE on an A5000) holds !Server, !System, !Manager, !NetUtils, !Spooler and !Merge, and a `$.!Boot` Obey file with boot option 2 (*Opt 4,2): `/ADFS::4.$.!System`, `Run ADFS::4.$.!Server.!Boot`, `Desktop /ADFS::4.$.!Server`. The server starts in the desktop, its icon reading "Ready", in about 30 s from power-on.
+- The supplied `Exports` exports `ADFS 4 $`, so the clients see the whole disc (77 objects in the root at most). The supplied `Users` file has SYST (no password), BOOT, Class1-3 and GUEST.
+- CMOS (`MachineConfiguration.cmosSettings`, kept at power-on, reset and through a CMOS reset): FileSystem 8 (ADFS, byte 5), Drive 4 (byte 11 bits 0-2), Boot (byte 16 bit 4), RMASize 1024K (byte 146, in pages: 32K pages at 4 MB). Byte numbers are OS_Byte 161's; the clock chip's RAM has bytes 0-191 at &40 and 192-239 at &10 (PRM, CMOS RAM allocation).
+- A client (RISC OS 3.11, CMOS defaults: file server 254) does `*NET`, `*I AM SYST`, `*CAT` and sees `Net::FileServer.$`.
+
 ## Joining MacBeeb's networks (design)
 
 - **Time:** network ticks are 24 MHz. MacBeeb's 2 MHz cycles are ×12 exactly. Both use a 16 µs quantum and a 16 µs line delay.

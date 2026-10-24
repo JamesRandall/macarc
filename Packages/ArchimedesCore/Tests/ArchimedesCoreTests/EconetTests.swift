@@ -89,6 +89,25 @@ final class EconetTests: XCTestCase {
         XCTAssertEqual(first, second)
     }
 
+    /// Machines on several threads give the same run as on one.
+    func testThreadsDontChangeTheRun() throws {
+        func run(threads: Int) throws -> ([EconetFrame], [String]) {
+            let (net, ms) = try stations([1, 2, 3])
+            net.useThreads(threads)
+            let trace = EconetTrace()
+            net.line.observer = { trace.observe($0) }
+            type(ms[1], "DIM B% 64:SYS &40000,&77,1,0,B%,64 TO H%\n", on: net, seconds: 1)
+            type(ms[2], "DIM B% 64:SYS &40000,&77,1,0,B%,64 TO H%\n", on: net, seconds: 1)
+            type(ms[0], "DIM B% 64:SYS &40009,&80,&77,2,0,B%,40,10,100 TO S%:SYS &40009,&80,&77,3,0,B%,40,10,100 TO S%\n", on: net, seconds: 2)
+            net.useThreads(1)
+            return (trace.frames, ms.map(screen))
+        }
+        let one = try run(threads: 1), three = try run(threads: 3)
+        XCTAssertGreaterThanOrEqual(one.0.count, 8)
+        XCTAssertEqual(one.0, three.0)
+        XCTAssertEqual(one.1, three.1)
+    }
+
     /// Nobody at the station: "not listening" (3). No clock: 4.
     func testNotListeningAndNoClock() throws {
         let (net, ms) = try stations([1])

@@ -16,6 +16,8 @@ protocol StationOwner: AnyObject {
     func station(_ controller: MachineController, didEject drive: Int)
     func stationNumber(_ controller: MachineController) -> Int?
     func stationCMOSPath(_ controller: MachineController) -> String?
+    /// Configuration the station keeps whatever RISC OS is told.
+    func stationCMOSSettings(_ controller: MachineController) -> [CMOSSetting]
     func stationTitle(_ controller: MachineController) -> String
 }
 
@@ -136,8 +138,12 @@ final class MachineController {
     private func readConsole() {
         guard watchesConsole, let host else { return }
         host.send { [weak self] s in
-            let line = s.machine.screenText.last { !$0.trimmingCharacters(in: .whitespaces).isEmpty }?
-                .trimmingCharacters(in: .whitespaces)
+            // The last line of text: in the desktop, rows of graphics read
+            // as "?" and "_" (unknown glyphs) and are passed over.
+            let line = s.machine.screenText.last { row in
+                let shown = row.filter { $0 != " " }
+                return !shown.isEmpty && shown.filter { $0.isLetter || $0.isNumber }.count * 2 >= shown.count
+            }?.trimmingCharacters(in: .whitespaces)
             DispatchQueue.main.async { if self?.consoleLine != line { self?.consoleLine = line } }
         }
     }
@@ -162,6 +168,7 @@ final class MachineController {
         c.romPaths = [hw.romPath]
         c.hardDiscs = hw.hardDiscs
         c.econetStation = owner?.stationNumber(self)
+        c.cmosSettings = owner?.stationCMOSSettings(self) ?? []
         // First boot, or a CMOS RISC OS never set up (as a 16 MB A540's was
         // when Delete was let go too soon): Delete held resets it to defaults.
         if let d = FileManager.default.contents(atPath: cmos), !Machine.cmosNeverConfigured([UInt8](d)) {
@@ -595,13 +602,13 @@ final class MachineController {
         fitHardDisc(url.path, drive: drive)
     }
 
-    /// Asks for ZIP archives and folders of RISC OS files.
+    /// Asks for ZIP archives, folders of RISC OS files and ADFS floppies.
     private func chooseFileSources(_ message: String) -> [URL] {
         let open = NSOpenPanel()
         open.canChooseDirectories = true
         open.canChooseFiles = true
         open.allowsMultipleSelection = true
-        open.allowedContentTypes = [.zip, .folder]
+        open.allowedContentTypes = [.zip, .folder] + Self.discTypes
         open.message = message
         open.prompt = "Choose"
         return open.runModal() == .OK ? open.urls : []
@@ -621,7 +628,7 @@ final class MachineController {
     }
 
     private static func describe(_ sources: [URL]) -> String {
-        sources.count == 1 ? sources[0].lastPathComponent : "\(sources.count) archives and folders"
+        sources.count == 1 ? sources[0].lastPathComponent : "\(sources.count) sources"
     }
 
     /// Creates a hard disc holding the files from ZIP archives or folders

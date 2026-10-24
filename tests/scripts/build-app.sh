@@ -29,7 +29,7 @@ cp Apps/MacArch/Info.plist "$APP/Contents/Info.plist"
 # Absolute paths: actool hands the work to a long-lived helper, which
 # resolves relative paths from wherever it was first started.
 xcrun actool "$PWD/Apps/MacArch/Resources/AppIcon.icon" --compile "$PWD/$APP/Contents/Resources" --platform macosx \
-    --minimum-deployment-target 14.0 --app-icon AppIcon \
+    --minimum-deployment-target 26.0 --app-icon AppIcon \
     --output-partial-info-plist "$PWD/build/AppIcon-partial.plist" > /dev/null
 rm -f build/AppIcon-partial.plist
 # The release notes, for Help > What's New.

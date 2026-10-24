@@ -104,19 +104,44 @@ public struct ToolOutput {
 /// The tools, run in a context.
 public final class AgentTools: ToolProvider {
     let context: AgentContext
-    public init(context: AgentContext) { self.context = context }
+    /// The app's networks; nil headless.
+    public weak var directory: MachineDirectory?
+    public init(context: AgentContext, directory: MachineDirectory? = nil) {
+        self.context = context
+        self.directory = directory
+    }
 
     /// Named snapshots (save_snapshot), kept in memory for the process.
     nonisolated(unsafe) static var slots: [String: [UInt8]] = [:]
 
     public var toolList: [[String: Any]] {
-        allTools.map { ["name": $0.name, "description": $0.description, "inputSchema": $0.schema] }
+        guard directory != nil else {
+            return allTools.map { ["name": $0.name, "description": $0.description, "inputSchema": $0.schema] }
+        }
+        // With networks, every machine tool can name its machine.
+        return allTools.map { tool in
+            var schema = tool.schema
+            var props = schema["properties"] as? [String: Any] ?? [:]
+            props["machine"] = machineProp
+            schema["properties"] = props
+            return ["name": tool.name, "description": tool.description, "inputSchema": schema]
+        } + Self.networkToolDefinitions
     }
 
     public func call(_ name: String, _ arguments: [String: Any]) -> [String: Any] {
-        guard let tool = allTools.first(where: { $0.name == name }) else { return errorResult("unknown tool \(name)") }
         do {
-            let out = try context.perform { try tool.run($0, arguments) }
+            let out: ToolOutput
+            if Self.networkToolNames.contains(name), let directory {
+                out = try directory.networkTool(name, arguments)
+            } else {
+                guard let tool = allTools.first(where: { $0.name == name }) else { return errorResult("unknown tool \(name)") }
+                var context = self.context
+                if let machine = str(arguments, "machine"), !machine.isEmpty {
+                    guard let directory else { throw ToolError(message: "there are no networks here: leave out `machine`") }
+                    context = try directory.context(for: machine)
+                }
+                out = try context.perform { try tool.run($0, arguments) }
+            }
             var content: [[String: Any]] = []
             if !out.text.isEmpty || out.png == nil { content.append(["type": "text", "text": out.text]) }
             if let png = out.png { content.append(["type": "image", "data": png.base64EncodedString(), "mimeType": "image/png"]) }
@@ -332,7 +357,7 @@ func space(_ a: [String: Any]) throws -> (MEMC.DebugSpace, UInt32) {
     }
 }
 
-let allTools: [Tool] = coreTools + debugTools
+let allTools: [Tool] = coreTools + debugTools + econetTools
 
 let coreTools: [Tool] = [
     Tool(name: "get_status",

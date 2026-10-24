@@ -63,8 +63,9 @@ public enum ADFSHardDiscBuilder {
     }
 
     /// Creates `path` with the files in `items` on a freshly formatted drive.
-    public static func create(path: String, geometry: HardDiscGeometry, name: String, items: [Item], directories: [[String]] = []) throws {
-        let image = try build(geometry: geometry, name: name, items: items, directories: directories)
+    public static func create(path: String, geometry: HardDiscGeometry, name: String, items: [Item], directories: [[String]] = [],
+                              bootOption: UInt8 = 0) throws {
+        let image = try build(geometry: geometry, name: name, items: items, directories: directories, bootOption: bootOption)
         let img = try HardDiscImage.create(path: path, geometry: geometry)
         let size = geometry.sectorSize, g = geometry
         for start in stride(from: 0, to: image.count, by: size) {
@@ -78,8 +79,10 @@ public enum ADFSHardDiscBuilder {
     }
 
     /// The used part of the drive (everything after it is zero).
-    /// `directories` adds directories that may be empty.
-    public static func build(geometry g: HardDiscGeometry, name: String, items: [Item], directories: [[String]] = []) throws -> [UInt8] {
+    /// `directories` adds directories that may be empty. `bootOption` is
+    /// *Opt 4's: 0 none, 1 load, 2 run, 3 exec $.!Boot at start-up.
+    public static func build(geometry g: HardDiscGeometry, name: String, items: [Item], directories: [[String]] = [],
+                             bootOption: UInt8 = 0) throws -> [UInt8] {
         let root = Node(name: "$")
         for (path, item) in items.map({ ($0.path, Optional($0)) }) + directories.map({ ($0, nil) }) {
             var dir = root
@@ -128,6 +131,7 @@ public enum ADFSHardDiscBuilder {
             put24(0, at: 0x000); put24(0, at: 0x100)
             d[0x1FE] = 0
         }
+        d[0x1FD] = bootOption & 3
         d[0x0FF] = ADFSFormatter.checksum(d, 0x000, 0x100)
         d[0x1FF] = ADFSFormatter.checksum(d, 0x100, 0x100)
 
@@ -192,15 +196,17 @@ public enum ADFSHardDiscBuilder {
 
     // MARK: - Sources
 
-    /// The files in a ZIP archive or under a folder.
+    /// The files in a ZIP archive, under a folder, or on an ADFS D or E
+    /// format floppy image.
     public static func items(from path: String) throws -> [Item] {
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir) else { throw MediaError.unreadable(path) }
         if isDir.boolValue { return try items(fromFolder: URL(fileURLWithPath: path)) }
         guard let d = FileManager.default.contents(atPath: path) else { throw MediaError.unreadable(path) }
         let bytes = [UInt8](d)
-        guard ZipArchive.isZip(bytes) else { throw MediaError.unsupportedFormat("\(path) is neither a folder nor a ZIP archive") }
-        return try items(fromZip: bytes)
+        if ZipArchive.isZip(bytes) { return try items(fromZip: bytes) }
+        if let disc = try? ADFSDiscReader.read(bytes: bytes) { return disc.items }
+        throw MediaError.unsupportedFormat("\(path) is not a folder, a ZIP archive or an ADFS floppy")
     }
 
     /// The files in a ZIP archive. Acorn extra fields give filetypes and
