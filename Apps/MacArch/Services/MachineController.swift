@@ -63,6 +63,14 @@ final class MachineController {
     /// Identifies this machine to its debugger window.
     let id = UUID()
     static var all: [UUID: MachineController] = [:]
+    /// The standalone machine whose window was last in front: where the
+    /// Game Library plays a game.
+    static weak var frontmost: MachineController?
+    /// A game to start in the next machine window that opens (the Game
+    /// Library, with no machine window open).
+    static var pendingLaunch: ((MachineController) -> Void)?
+    /// The game from My Games it's playing, if any.
+    var playing: UUID?
     /// The debugger's view of this machine.
     @ObservationIgnored private(set) lazy var debugger = DebuggerModel(machine: self)
     /// Set when the debugger stops the machine, so its window opens.

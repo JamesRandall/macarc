@@ -13,6 +13,10 @@ enum SelfTest {
             InternetSelfTest.run(path, host: part == "host")
             return
         }
+        if let disc = ProcessInfo.processInfo.environment["MACARCH_SELFTEST_LIBRARY"] {
+            LibrarySelfTest.run(path, disc: disc, machine: machine)
+            return
+        }
         let wait = Double(ProcessInfo.processInfo.environment["MACARCH_SELFTEST_SECONDS"] ?? "") ?? 20
         let launched = Date()
         Task { @MainActor in

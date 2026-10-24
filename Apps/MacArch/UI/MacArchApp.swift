@@ -8,7 +8,7 @@ struct MacArchApp: App {
     @FocusedValue(MachineController.self) private var machine
 
     var body: some Scene {
-        WindowGroup("Archimedes") {
+        WindowGroup("Archimedes", id: MachineWindow.windowID) {
             MachineWindow()
         }
         .defaultSize(width: 960, height: 760)
@@ -113,6 +113,7 @@ struct MacArchApp: App {
             }
             CommandMenu("MCP") { MCPMenu() }
             CommandGroup(before: .windowList) {
+                GameLibraryMenuItem()
                 NetworkStudioMenuItem()
                 Divider()
             }
@@ -155,6 +156,8 @@ struct MacArchApp: App {
         .defaultSize(width: 800, height: 640)
         .restorationBehavior(.disabled)
 
+        Window(GameLibraryView.title, id: GameLibraryView.windowID) { GameLibraryView() }
+            .defaultSize(width: 980, height: 720)
         Window("New Network", id: NetworkStartView.windowID) { NetworkStartView() }
             .windowResizability(.contentSize)
         Window("Join Econet Network", id: JoinRoomView.windowID) { JoinRoomView() }
@@ -307,20 +310,32 @@ struct HardDiscItems: View {
 }
 
 struct MachineWindow: View {
+    static let windowID = "machine"
     @State private var machine = MachineController()
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.controlActiveState) private var active
 
     var body: some View {
         MachineScreen(machine: machine)
             .onAppear {
                 if WhatsNew.shouldShowOnLaunch() { openWindow(id: "whats-new") }
+                MachineController.frontmost = machine
+                // A game the Game Library asked for, with no machine open.
+                if let launch = MachineController.pendingLaunch {
+                    MachineController.pendingLaunch = nil
+                    launch(machine)
+                }
             }
+            .onChange(of: active) { if active == .key { MachineController.frontmost = machine } }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                 machine.shutdown()
             }
             // Agents and the self-test ask for networks' windows.
             .onReceive(NotificationCenter.default.publisher(for: NetworkStudioCommands.openRequest)) { note in
                 if let url = note.object as? URL { NetworkStudioCommands.open(url, openWindow: openWindow) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: LibrarySelfTest.openRequest)) { _ in
+                openWindow(id: GameLibraryView.windowID)
             }
             // An invitation link (macarch://join…) from its web page.
             .onOpenURL { url in
