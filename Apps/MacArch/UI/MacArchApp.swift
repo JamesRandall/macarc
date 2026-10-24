@@ -11,6 +11,10 @@ struct MacArchApp: App {
         WindowGroup("Archimedes", id: MachineWindow.windowID) {
             MachineWindow()
         }
+        // Only when Settings ▸ General says to open with an Archimedes
+        // (otherwise it's the welcome screen or another part).
+        .defaultLaunchBehavior(LaunchScreen.atLaunch == .machine ? .automatic : .suppressed)
+        .restorationBehavior(LaunchScreen.atLaunch == .machine ? .automatic : .disabled)
         .defaultSize(width: 960, height: 760)
         .commands {
             CommandGroup(replacing: .appInfo) {
@@ -113,6 +117,7 @@ struct MacArchApp: App {
             }
             CommandMenu("MCP") { MCPMenu() }
             CommandGroup(before: .windowList) {
+                WelcomeMenuItem()
                 GameLibraryMenuItem()
                 NetworkStudioMenuItem()
                 Divider()
@@ -158,6 +163,13 @@ struct MacArchApp: App {
 
         Window(GameLibraryView.title, id: GameLibraryView.windowID) { GameLibraryView() }
             .defaultSize(width: 980, height: 720)
+            .defaultLaunchBehavior(LaunchScreen.atLaunch == .games ? .presented : .suppressed)
+        Window(WelcomeScreen.title, id: WelcomeScreen.windowID) { WelcomeScreen() }
+            .windowStyle(.hiddenTitleBar)
+            .windowResizability(.contentSize)
+            .restorationBehavior(.disabled)
+            // The welcome screen, or on its way to the Network Studio.
+            .defaultLaunchBehavior(LaunchScreen.atLaunch == .welcome || LaunchScreen.atLaunch == .network ? .presented : .suppressed)
         Window("New Network", id: NetworkStartView.windowID) { NetworkStartView() }
             .windowResizability(.contentSize)
         Window("Join Econet Network", id: JoinRoomView.windowID) { JoinRoomView() }
@@ -337,6 +349,9 @@ struct MachineWindow: View {
             .onReceive(NotificationCenter.default.publisher(for: LibrarySelfTest.openRequest)) { _ in
                 openWindow(id: GameLibraryView.windowID)
             }
+            .onReceive(NotificationCenter.default.publisher(for: WelcomeScreen.openRequest)) { _ in
+                openWindow(id: WelcomeScreen.windowID)
+            }
             // An invitation link (macarch://join…) from its web page.
             .onOpenURL { url in
                 guard JoinRequests.isJoinLink(url) else { return }
@@ -422,9 +437,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         // Starts the background update checks.
         _ = Updates.shared
+        WelcomeReturn.start()
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    /// With the welcome screen as the opening screen, closing the last
+    /// window brings it back (WelcomeReturn), and closing it quits.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { !WelcomeReturn.applies }
+
+    /// The Dock icon clicked with no windows open: the welcome screen.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        if !hasVisibleWindows && WelcomeReturn.applies {
+            WelcomeReturn.open()
+            return false
+        }
+        return true
+    }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         MachineController.confirmQuit() ? .terminateNow : .terminateCancel

@@ -13,6 +13,23 @@ enum SelfTest {
             InternetSelfTest.run(path, host: part == "host")
             return
         }
+        // MACARCH_SELFTEST_WELCOME=1: the welcome screen, captured (-welcome.png).
+        if ProcessInfo.processInfo.environment["MACARCH_SELFTEST_WELCOME"] != nil {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                NotificationCenter.default.post(name: WelcomeScreen.openRequest, object: nil)
+                try? await Task.sleep(for: .seconds(4))
+                if let window = NSApp.windows.first(where: { $0.title == WelcomeScreen.title && $0.isVisible }),
+                   let frameView = window.contentView?.superview,
+                   let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) {
+                    frameView.cacheDisplay(in: frameView.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?
+                        .write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-welcome.png")))
+                }
+                NSApp.terminate(nil)
+            }
+            return
+        }
         if let disc = ProcessInfo.processInfo.environment["MACARCH_SELFTEST_LIBRARY"] {
             LibrarySelfTest.run(path, disc: disc, machine: machine)
             return

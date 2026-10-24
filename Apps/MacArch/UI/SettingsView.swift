@@ -5,6 +5,8 @@ import SwiftUI
 struct SettingsView: View {
     var body: some View {
         TabView {
+            GeneralSettingsView()
+                .tabItem { Label("General", systemImage: "gearshape") }
             MachineSettingsView()
                 .tabItem { Label("Machine", systemImage: "desktopcomputer") }
             MouseSettingsView()
@@ -304,5 +306,28 @@ struct NetworkingSettingsView: View {
                 result = (false, "No Internet Econet service answered at \(url.host ?? url.absoluteString)")
             }
         }
+    }
+}
+
+/// What MacArch opens with.
+struct GeneralSettingsView: View {
+    @AppStorage(LaunchScreen.defaultsKey, store: AppSettings.store) private var launchScreen = LaunchScreen.preference
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("When MacArch opens, show", selection: $launchScreen) {
+                    ForEach(LaunchScreen.allCases) { screen in
+                        Text(screen.title).tag(screen)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+                Text("The welcome screen leads to everything: an Archimedes, the Game Library and the Network Studio. With it, closing your last window brings it back, and closing it quits MacArch. The Network Studio opens the network you used last. Takes effect the next time MacArch opens; Window ▸ Welcome to MacArch shows the welcome screen any time.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .formStyle(.grouped)
     }
 }
