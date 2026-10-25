@@ -43,8 +43,7 @@ final class ClassicsTests: XCTestCase {
         let c = try Self.catalogue()
         let covers = Self.root.appendingPathComponent("Apps/MacArch/Resources/Covers")
         let missing = c.games.filter { !FileManager.default.fileExists(atPath: covers.appendingPathComponent("\($0.id).jpg").path) }
-        // Two have no box art yet: they get a typographic cover.
-        XCTAssertEqual(Set(missing.map(\.id)), ["starfighter3000", "bughunter"])
+        XCTAssertEqual(missing.map(\.id), [], "every Classic has its box art")
     }
 
     func testCommandLines() throws {
