@@ -19,7 +19,6 @@ struct WelcomeScreen: View {
     /// What's New has notes the user hasn't seen (until they look).
     @MainActor private static var unseenNotes = false
     @State private var hasUnseenNotes = WelcomeScreen.unseenNotes
-    @State private var library = GameLibrary.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 26) {
@@ -104,6 +103,13 @@ struct WelcomeScreen: View {
                     blurb: "An A310, A3000, A440/1 or A5000, with RISC OS 2 or 3 from your own ROMs. Fit hard discs, and step through its ARM in the debugger.") {
             ModelChips()
         } actions: {
+            Button { openWindow(id: "roms") } label: {
+                Label("Add ROMs…", systemImage: "memorychip")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .help("Add RISC OS ROM images you own: files, chip sets, folders or ZIP archives")
             Button { go { openWindow(id: MachineWindow.windowID) } } label: {
                 Label("Switch On", systemImage: "power")
                     .frame(maxWidth: .infinity)
@@ -117,11 +123,11 @@ struct WelcomeScreen: View {
 
     private var gamesCard: some View {
         WelcomeCard(colour: .orange, symbol: "books.vertical", title: "Game Library",
-                    blurb: "Your own Archimedes games on a shelf, with their box art: each with its disc, the machine it plays on and how it starts, ready to play with a double-click.") {
+                    blurb: "The Archimedes Classics, a Top 25 from the Archimedes Archive, and your own games, with their box art. Each boots straight into the game, on the machine it wants.") {
             CoverFan()
         } actions: {
             Button { go { openWindow(id: GameLibraryView.windowID) } } label: {
-                Label(library.personalGames.isEmpty ? "Add Your Games" : "Browse Games", systemImage: "gamecontroller")
+                Label("Browse Games", systemImage: "gamecontroller")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)

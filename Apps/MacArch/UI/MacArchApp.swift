@@ -158,6 +158,11 @@ struct MacArchApp: App {
                 Button("Rewind Timeline…") { machine?.showingTimeline = true }
                     .keyboardShortcut(.leftArrow, modifiers: [.command, .option, .shift])
                 Divider()
+                // A Classic on several discs: the next one, when it asks.
+                Button(machine?.nextSessionDiscTitle ?? "Next Disc") { machine?.insertNextSessionDisc() }
+                    .keyboardShortcut("n", modifiers: [.command, .option])
+                    .disabled(machine?.sessionDiscsActive != true)
+                Divider()
                 HardwarePickers(machine: machine)
                 }
                 .disabled(machine?.host == nil)
@@ -275,8 +280,14 @@ struct HardwarePickers: View {
                     .disabled(!model.monitorChoices.contains(t))
             }
         }
-        Picker("ROM", selection: Binding(get: { machine?.romPath ?? "" }, set: { machine?.setHardware(romPath: $0) })) {
-            ForEach(AppSettings.shared.romLibrary) { Text($0.version).tag($0.path) }
+        // A button inside a Picker is taken for one of its choices (and
+        // does nothing), so the picker and Add ROMs… share a submenu.
+        Menu("ROM") {
+            Picker("ROM", selection: Binding(get: { machine?.romPath ?? "" }, set: { machine?.setHardware(romPath: $0) })) {
+                ForEach(AppSettings.shared.romLibrary) { Text($0.version).tag($0.path) }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
             Divider()
             Button("Add ROMs…") { openWindow(id: "roms") }
         }

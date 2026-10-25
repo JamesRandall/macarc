@@ -9,6 +9,11 @@ release's section for the GitHub release and Sparkle's update window, and
 won't build a release without one.
 -->
 
+## 0.4.0
+
+- **Archimedes Classics:** the Game Library has a new shelf, a Top 25 of Archimedes games from Star Fighter 3000 and Zarch to Lemmings and Repton 4, with their box art. Get one from the [Archimedes Archive](https://arcarc.top/) in your browser and MacArch adds its discs as they download. Play sets up the machine it wants and boots straight into the game, putting later discs in when it asks for them, or with Machine ▸ Insert Disc 2 (⌥⌘N).
+- **Add ROMs** works again from Machine ▸ ROM, and the welcome screen has an Add ROMs… button.
+
 ## 0.3.0
 
 Archimedes on a network: Econet, Acorn's Level 4 File Server, and a Network Studio like MacBeeb's.

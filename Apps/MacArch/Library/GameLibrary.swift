@@ -2,9 +2,8 @@ import AppKit
 import ArchimedesCore
 import Observation
 
-/// The Game Library's state: the user's own games (My Games), and any
-/// being added or edited. (After MacBeeb's ClassicsLibrary, without the
-/// archive's shelves: there's no Archimedes archive to link to.)
+/// My Games' state: the user's own games, and any being added or edited.
+/// (The Archimedes Classics are ClassicsLibrary's.)
 @MainActor
 @Observable
 final class GameLibrary {
@@ -31,9 +30,9 @@ final class GameLibrary {
     /// Adds dropped or chosen files: discs and pictures become games, whose
     /// details the user fills in.
     func addFiles(_ urls: [URL]) {
-        let groups = MyGames.group(urls)
-        guard !groups.isEmpty else { return }
         Task {
+            // The Classics' discs go to them; anything else is My Games'.
+            let groups = MyGames.group(await ClassicsLibrary.shared.add(urls))
             for group in groups {
                 var disc: DiscFile?
                 if let url = group.disc {
@@ -65,7 +64,7 @@ final class GameLibrary {
         panel.allowedContentTypes = MachineController.discTypes + [.image]
         panel.allowsOtherFileTypes = true
         panel.allowsMultipleSelection = true
-        panel.message = "Choose floppy disc images and cover pictures. A disc and a picture with the same name make one game."
+        panel.message = "Choose disc images and cover pictures: the Classics’ discs from the Archimedes Archive, or your own games. A disc and a picture with the same name make one game."
         guard panel.runModal() == .OK else { return }
         addFiles(panel.urls)
     }

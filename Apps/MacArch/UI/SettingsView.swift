@@ -309,9 +309,10 @@ struct NetworkingSettingsView: View {
     }
 }
 
-/// What MacArch opens with.
+/// What MacArch opens with, and how the Game Library finds downloaded discs.
 struct GeneralSettingsView: View {
     @AppStorage(LaunchScreen.defaultsKey, store: AppSettings.store) private var launchScreen = LaunchScreen.preference
+    @State private var classics = ClassicsLibrary.shared
 
     var body: some View {
         Form {
@@ -323,6 +324,27 @@ struct GeneralSettingsView: View {
                 }
                 .pickerStyle(.radioGroup)
                 Text("The welcome screen leads to everything: an Archimedes, the Game Library and the Network Studio. With it, closing your last window brings it back, and closing it quits MacArch. The Network Studio opens the network you used last. Takes effect the next time MacArch opens; Window ▸ Welcome to MacArch shows the welcome screen any time.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Section("Game Library") {
+                Toggle("Add downloaded Classics’ discs automatically", isOn: Binding(get: { classics.autoDetect == true },
+                                                                                    set: { classics.autoDetect = $0 }))
+                LabeledContent("Look in") {
+                    HStack {
+                        Text(classics.downloadFolder.lastPathComponent)
+                        Button("Choose…") {
+                            let panel = NSOpenPanel()
+                            panel.canChooseDirectories = true
+                            panel.canChooseFiles = false
+                            panel.directoryURL = classics.downloadFolder
+                            if panel.runModal() == .OK, let url = panel.url { classics.downloadFolder = url }
+                        }
+                    }
+                }
+                .disabled(classics.autoDetect != true)
+                Text("The Archimedes Classics’ discs come from the Archimedes Archive, downloaded in your browser. MacArch recognises them in this folder and adds them to the Game Library. It only reads them, and only while it’s open.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

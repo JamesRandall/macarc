@@ -71,6 +71,17 @@ final class MachineController {
     static var pendingLaunch: ((MachineController) -> Void)?
     /// The game from My Games it's playing, if any.
     var playing: UUID?
+    /// The Archimedes Classic it's playing, if any: its own machine (not
+    /// the one in Settings), started from a CMOS reset, with its discs.
+    /// (Set by ClassicPlay.swift's play(_:…).)
+    var session: GameSession?
+    /// Which of the session's floppies is in drive 0.
+    var sessionDisc = 0
+    /// Whether the session still has its discs to hand (not after another
+    /// disc's put in by hand).
+    var sessionDiscsActive = false
+    @ObservationIgnored let launcherBox = LauncherBox()
+    @ObservationIgnored var launcherTimer: Timer?
     /// The debugger's view of this machine.
     @ObservationIgnored private(set) lazy var debugger = DebuggerModel(machine: self)
     /// Set when the debugger stops the machine, so its window opens.
@@ -179,7 +190,8 @@ final class MachineController {
         c.cmosSettings = owner?.stationCMOSSettings(self) ?? []
         // First boot, or a CMOS RISC OS never set up (as a 16 MB A540's was
         // when Delete was let go too soon): Delete held resets it to defaults.
-        if let d = FileManager.default.contents(atPath: cmos), !Machine.cmosNeverConfigured([UInt8](d)) {
+        // A Classic always starts from RISC OS's defaults.
+        if session == nil, let d = FileManager.default.contents(atPath: cmos), !Machine.cmosNeverConfigured([UInt8](d)) {
             c.cmosPath = cmos
         } else {
             c.powerOnKeys = [0x34]
@@ -197,7 +209,7 @@ final class MachineController {
             alert("A hard disc image is missing", "The machine starts without " + missing.map { ($0 as NSString).lastPathComponent }.joined(separator: ", ") + ". Use Hard Disc > Open to fit it again.")
         }
         let rom = try ROMImage.load(paths: [hw.romPath])
-        let cmos = owner?.stationCMOSPath(self) ?? AppSettings.cmosPath(for: rom, model: hw.model)
+        let cmos = owner?.stationCMOSPath(self) ?? session?.cmosPath ?? AppSettings.cmosPath(for: rom, model: hw.model)
         return (try Machine(configuration: configuration(hw, cmos: cmos), rom: rom), cmos, hw)
     }
 
@@ -211,6 +223,8 @@ final class MachineController {
             owner.stationSetupChanged(self)
             return
         }
+        // A Classic's machine is its own: Settings keep the user's.
+        if session != nil { return }
         let s = AppSettings.shared
         s.model = hw.model; s.romPath = hw.romPath
         s.setCPU(hw.cpu, for: hw.model); s.setRAMKB(hw.ramKB, for: hw.model); s.setHardDiscs(hw.hardDiscs, for: hw.model)
@@ -275,7 +289,18 @@ final class MachineController {
     /// the processor, memory and hard discs it last had.
     func setHardware(model newModel: MachineModel? = nil, cpu newCPU: CPUType? = nil, ramKB newRAM: Int? = nil,
                      monitor newMonitor: MonitorType? = nil, romPath newROM: String? = nil, hardDiscs newDiscs: [String?]? = nil,
-                     reload: Bool = false) {
+                     reload: Bool = false, keepingSession: Bool = false) {
+        var reload = reload
+        if session != nil && !keepingSession {
+            // A change made by hand ends a Classic: back to the user's own
+            // machine (as Settings have it), with the change.
+            endSession()
+            let s = AppSettings.shared
+            model = s.model; cpu = s.cpu(for: s.model); ramKB = s.ramKB(for: s.model); monitor = s.monitor(for: s.model)
+            hardDiscs = s.hardDiscs(for: s.model)
+            if let rom = s.romPath { romPath = rom }
+            reload = true
+        }
         var hw = Hardware(model: model, cpu: cpu, ramKB: ramKB, monitor: monitor, romPath: romPath ?? "", hardDiscs: hardDiscs)
         if let newModel, newModel != hw.model, isStation {
             hw = Hardware(model: newModel, cpu: newModel.defaultCPU, ramKB: newModel.defaultRAMKB, monitor: .standard,
@@ -382,6 +407,7 @@ final class MachineController {
     /// Puts the image in drive 0. Writes stay in memory; the file is never changed.
     func insertDisc(_ url: URL) {
         guard confirmDiscChanges(before: "inserting another disc") else { return }
+        stopSessionDiscs()
         var url = url
         if let owner {
             guard let copy = owner.station(self, willInsert: url, drive: 0) else { return }
@@ -400,6 +426,7 @@ final class MachineController {
 
     func ejectDisc() {
         guard confirmDiscChanges(before: "ejecting it") else { return }
+        stopSessionDiscs()
         host?.send { $0.machine.ejectFloppy() }
         discName = nil
         owner?.station(self, didEject: 0)
@@ -1097,7 +1124,7 @@ final class MachineController {
 
     var title: String {
         if host == nil { return "Welcome to MacArch" }
-        let name = owner.map { "\($0.stationTitle(self)) — \(machineName)" } ?? machineName
+        let name = owner.map { "\($0.stationTitle(self)) — \(machineName)" } ?? session.map { "\($0.title) — \(machineName)" } ?? machineName
         var t = discName.map { "\(name) — \($0)" + (disc.modified ? " (edited)" : "") } ?? name
         if paused { t += " (Paused)" } else if heldForAgent { t += " (Held by AI Agent)" }
         if recordingURL != nil { t += " ● Recording" }

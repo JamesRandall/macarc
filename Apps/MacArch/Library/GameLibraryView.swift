@@ -3,16 +3,38 @@ import ArchimedesCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The Game Library: the user's own games (My Games), as covers on a shelf,
-/// with a game's details beside them. (MacBeeb's bookshelf, with only its
-/// My Games shelf: there's no Archimedes archive like BBCMicro.co.uk to
-/// link to.) Drop disc images and cover pictures on it to add games.
+/// The shelves of the game library, one to a tab.
+enum ShelfTab: String, CaseIterable, Identifiable {
+    /// The Archimedes Top 25, from the Archimedes Archive.
+    case classics
+    /// The user's own.
+    case myGames
+
+    var id: Self { self }
+
+    var name: String {
+        switch self {
+        case .classics: "Archimedes Classics"
+        case .myGames: "My Games"
+        }
+    }
+}
+
+/// The Game Library: the Archimedes Classics (a Top 25, with a book for the
+/// Archimedes Archive their discs come from) and My Games, in tabs, as
+/// covers on a shelf with a game's details beside them. The Classics' discs
+/// are downloaded from the archive in the user's browser; MacArch never
+/// downloads them itself. Drop disc images and cover pictures on it to add
+/// games: the Classics' discs go to them, anything else to My Games.
+/// (MacBeeb's bookshelf.)
 struct GameLibraryView: View {
     static let windowID = "game-library"
     static let title = "Game Library"
 
     @State private var library = GameLibrary.shared
-    @State private var selection: UUID?
+    @State private var classics = ClassicsLibrary.shared
+    @AppStorage("MacArchLibraryTab", store: AppSettings.store) private var tab = ShelfTab.classics
+    @State private var selection: String?
     @State private var showingDetail = false
     @State private var columns = 4
     @FocusState private var gridFocused: Bool
@@ -23,35 +45,27 @@ struct GameLibraryView: View {
     private static let detailWidth: CGFloat = 320
     static let spacing: CGFloat = 28
 
+    /// Selection IDs, unique across the shelves.
+    private static func classicID(_ game: ClassicGame) -> String { "classic-\(game.id)" }
+    private static func myID(_ game: PersonalGame) -> String { "my-\(game.id.uuidString)" }
+    private static let archiveID = "archive"
+
     var body: some View {
         ScrollViewReader { scroller in
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    header
-                    ShelfLayout(tileWidth: Self.tileWidth, spacing: Self.spacing) {
-                        ForEach(library.personalGames) { game in
-                            PersonalTile(game: game, selected: selection == game.id)
-                                .id(game.id)
-                                .onTapGesture {
-                                    select(game.id)
-                                    gridFocused = true
-                                }
-                                .simultaneousGesture(TapGesture(count: 2).onEnded {
-                                    if game.discFile != nil { Player.play(game) { openMachine() } }
-                                })
-                                .accessibilityAction { select(game.id) }
-                                .contextMenu {
-                                    Button("Play") { Player.play(game) { openMachine() } }
-                                        .disabled(game.discFile == nil)
-                                    Divider()
-                                    Button("Edit…") { library.edit(game) }
-                                    Button(game.discFile == nil ? "Choose Disc…" : "Replace Disc…") { library.chooseDisc(for: game) }
-                                    Button(game.coverFile == nil ? "Add Cover…" : "Change Cover…") { library.chooseCover(for: game) }
-                                    Divider()
-                                    Button("Remove…") { library.remove(game) }
-                                }
+                    switch tab {
+                    case .classics:
+                        classicsHeader
+                        banners
+                    case .myGames:
+                        myGamesHeader
+                    }
+                    Group {
+                        switch tab {
+                        case .classics: classicsGrid
+                        case .myGames: myGamesGrid
                         }
-                        AddGameTile()
                     }
                     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
                         columns = ShelfLayout.columns(in: width, tileWidth: Self.tileWidth, spacing: Self.spacing)
@@ -65,8 +79,8 @@ struct GameLibraryView: View {
                         if let selection { withAnimation(reduceMotion ? nil : .default) { scroller.scrollTo(selection) } }
                     }
                     .onKeyPress(.return) {
-                        guard let game = selectedGame, game.discFile != nil else { return .ignored }
-                        Player.play(game) { openMachine() }
+                        guard let selection else { return .ignored }
+                        primaryAction(for: selection)
                         return .handled
                     }
                     .onKeyPress(.escape) {
@@ -74,8 +88,9 @@ struct GameLibraryView: View {
                         showingDetail = false
                         return .handled
                     }
-                    if library.personalGames.isEmpty {
-                        emptyHelp
+                    switch tab {
+                    case .classics: credit
+                    case .myGames: if library.personalGames.isEmpty { emptyHelp }
                     }
                 }
                 .padding(24)
@@ -84,7 +99,11 @@ struct GameLibraryView: View {
         .background(.background)
         .inspector(isPresented: $showingDetail) {
             Group {
-                if let game = selectedGame {
+                if let game = selectedClassic {
+                    ClassicDetail(game: game) { openMachine() }
+                } else if selection == Self.archiveID {
+                    ArchiveDetail(archive: classics.catalogue.archive)
+                } else if let game = selectedPersonalGame {
                     PersonalGameDetail(game: game) { openMachine() }
                 } else {
                     ContentUnavailableView("No Game Selected", systemImage: "square.stack", description: Text("Choose a game to see its details."))
@@ -93,7 +112,7 @@ struct GameLibraryView: View {
             .inspectorColumnWidth(Self.detailWidth)
         }
         .dropDestination(for: URL.self) { urls, _ in
-            let wanted = urls.filter { MyGames.isDiscName($0) || MyGames.isCoverName($0) }
+            let wanted = urls.filter { MyGames.isDiscName($0) || MyGames.isCoverName($0) || ClassicsLibrary.isCandidateName($0) }
             library.addFiles(wanted)
             return !wanted.isEmpty
         }
@@ -102,16 +121,38 @@ struct GameLibraryView: View {
             GameDetailsSheet(draft: draft)
         }
         .navigationTitle(Self.title)
-        .navigationSubtitle("My Games")
+        .navigationSubtitle(tab.name)
+        .onChange(of: tab) {
+            selection = nil
+            showingDetail = false
+            gridFocused = true
+        }
+        // A disc or picture that's to be one of My Games: show them.
+        .onChange(of: library.drafts.count) { old, new in
+            if new > old { tab = .myGames }
+        }
+        // A Classic's disc arriving: show it.
+        .onChange(of: classics.arrivals) {
+            tab = .classics
+        }
+        .bringsLibraryForwardOnArrival()
         .onAppear { gridFocused = true }
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("Shelf", selection: $tab) {
+                    ForEach(ShelfTab.allCases) { Text($0.name).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .help("Choose a shelf")
+            }
             ToolbarItem {
                 Button { openMachine() } label: { Label("Archimedes", systemImage: "desktopcomputer") }
                     .help("Open an Archimedes window, to use without a game from the shelf")
             }
             ToolbarItem {
                 Button { library.chooseFiles() } label: { Label("Add Games…", systemImage: "plus") }
-                    .help("Add floppy disc images and cover pictures as your own games")
+                    .help("Add disc images and cover pictures: the Classics’ discs, or your own games")
             }
             ToolbarItem {
                 Button { showingDetail.toggle() } label: { Label("Details", systemImage: "sidebar.right") }
@@ -120,9 +161,81 @@ struct GameLibraryView: View {
         }
     }
 
-    private var selectedGame: PersonalGame? { selection.flatMap { library.game(id: $0) } }
+    private var selectedClassic: ClassicGame? {
+        classics.catalogue.games.first { Self.classicID($0) == selection }
+    }
 
-    private var header: some View {
+    private var selectedPersonalGame: PersonalGame? {
+        library.personalGames.first { Self.myID($0) == selection }
+    }
+
+    private var classicsHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Archimedes Classics")
+                .font(.largeTitle.weight(.semibold))
+            Text("Twenty-five of the Archimedes’ best games, from the Archimedes Archive, ready to discover and play.")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    @ViewBuilder private var banners: some View {
+        if case .noAccess = classics.watchState {
+            ShelfBanner(systemImage: "folder.badge.questionmark") {
+                Text("MacArch can’t look in \(classics.downloadFolder.lastPathComponent) for downloaded discs. Allow it in System Settings ▸ Privacy & Security ▸ Files & Folders, or choose another folder in Settings. You can always add discs with Add Games… or by dragging them here.")
+            } actions: {
+                SettingsLink { Text("Settings…") }
+            }
+        } else if !classics.pending.isEmpty && classics.autoDetect != true {
+            ShelfBanner(systemImage: "arrow.down.circle") {
+                Text("To add games automatically, allow MacArch to look for downloaded disc images. You can always add them by hand.")
+            } actions: {
+                Button("Look for Downloads") { classics.autoDetect = true }
+            }
+        }
+    }
+
+    private var classicsGrid: some View {
+        ShelfLayout(tileWidth: Self.tileWidth, spacing: Self.spacing) {
+            ForEach(classics.catalogue.games) { game in
+                ClassicTile(game: game, selected: selection == Self.classicID(game))
+                    .id(Self.classicID(game))
+                    .onTapGesture {
+                        select(Self.classicID(game))
+                        gridFocused = true
+                    }
+                    // A double click plays it if it's in (it never starts a download).
+                    .simultaneousGesture(TapGesture(count: 2).onEnded {
+                        if classics.state(of: game) == .installed { Player.play(game) { openMachine() } }
+                    })
+                    .accessibilityAction { select(Self.classicID(game)) }
+                    .contextMenu {
+                        if classics.state(of: game) == .installed {
+                            Button("Play") { Player.play(game) { openMachine() } }
+                            Divider()
+                            Button("Reveal Discs") { classics.reveal(game) }
+                            Button("Remove…") { classics.remove(game) }
+                        } else {
+                            Button("Get from the Archimedes Archive") { classics.get(game) }
+                            Button("Add Discs…") { classics.chooseAndImport(for: game) }
+                        }
+                    }
+            }
+            ArchiveTile(archive: classics.catalogue.archive, selected: selection == Self.archiveID)
+                .id(Self.archiveID)
+                .onTapGesture {
+                    select(Self.archiveID)
+                    gridFocused = true
+                }
+                .simultaneousGesture(TapGesture(count: 2).onEnded { NSWorkspace.shared.open(classics.catalogue.archive.url) })
+                .accessibilityAction { select(Self.archiveID) }
+        }
+    }
+
+    private var myGamesHeader: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("My Games")
@@ -139,6 +252,48 @@ struct GameLibraryView: View {
         }
     }
 
+    /// The user's own games, and a box to add more.
+    private var myGamesGrid: some View {
+        ShelfLayout(tileWidth: Self.tileWidth, spacing: Self.spacing) {
+            ForEach(library.personalGames) { game in
+                PersonalTile(game: game, selected: selection == Self.myID(game))
+                    .id(Self.myID(game))
+                    .onTapGesture {
+                        select(Self.myID(game))
+                        gridFocused = true
+                    }
+                    .simultaneousGesture(TapGesture(count: 2).onEnded {
+                        if game.discFile != nil { Player.play(game) { openMachine() } }
+                    })
+                    .accessibilityAction { select(Self.myID(game)) }
+                    .contextMenu {
+                        Button("Play") { Player.play(game) { openMachine() } }
+                            .disabled(game.discFile == nil)
+                        Divider()
+                        Button("Edit…") { library.edit(game) }
+                        Button(game.discFile == nil ? "Choose Disc…" : "Replace Disc…") { library.chooseDisc(for: game) }
+                        Button(game.coverFile == nil ? "Add Cover…" : "Change Cover…") { library.chooseCover(for: game) }
+                        Divider()
+                        Button("Remove…") { library.remove(game) }
+                    }
+            }
+            AddGameTile()
+        }
+    }
+
+    private var credit: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Divider()
+            Text("Disc images courtesy of the Archimedes Archive (arcarc.top), downloaded in your browser. The archive and its contributors have spent years preserving Archimedes software for emulators and original machines. MacArch is an independent emulator and is not affiliated with the archive.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Link("About the Archimedes Archive", destination: URL(string: "https://arcarc.top/")!)
+                .font(.callout)
+        }
+        .padding(.top, 8)
+    }
+
     private var emptyHelp: some View {
         VStack(alignment: .leading, spacing: 6) {
             Divider()
@@ -150,13 +305,20 @@ struct GameLibraryView: View {
         .padding(.top, 8)
     }
 
-    private func select(_ id: UUID) {
+    private func select(_ id: String) {
         selection = id
         showingDetail = true
     }
 
+    private var ids: [String] {
+        switch tab {
+        case .classics: classics.catalogue.games.map(Self.classicID) + [Self.archiveID]
+        case .myGames: library.personalGames.map(Self.myID)
+        }
+    }
+
     private func move(_ direction: MoveCommandDirection) {
-        let ids = library.personalGames.map(\.id)
+        let ids = self.ids
         guard !ids.isEmpty else { return }
         let current = selection.flatMap(ids.firstIndex(of:))
         let step = switch direction {
@@ -167,6 +329,22 @@ struct GameLibraryView: View {
         @unknown default: 0
         }
         selection = ids[current.map { min(max($0 + step, 0), ids.count - 1) } ?? 0]
+    }
+
+    /// Return on a tile: its main action.
+    private func primaryAction(for id: String) {
+        showingDetail = true
+        if let game = selectedPersonalGame, Self.myID(game) == id {
+            if game.discFile != nil { Player.play(game) { openMachine() } }
+        } else if id == Self.archiveID {
+            NSWorkspace.shared.open(classics.catalogue.archive.url)
+        } else if let game = selectedClassic {
+            switch classics.state(of: game) {
+            case .notInstalled, .partial: classics.get(game)
+            case .installed: Player.play(game) { openMachine() }
+            default: break
+            }
+        }
     }
 
     private func openMachine() {

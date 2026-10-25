@@ -36,8 +36,9 @@ rm -f build/AppIcon-partial.plist
 cp WHATSNEW.md "$APP/Contents/Resources/WhatsNew.md"
 # Acorn's Level 4 File Server (Release 3's "Level 4" disc), which network templates' file servers are built from.
 cp Apps/MacArch/Resources/Level4.adf "$APP/Contents/Resources/Level4.adf"
-# Box art for the welcome screen.
+# Box art for the welcome screen and the Game Library, and the Archimedes Classics' catalogue.
 ditto Apps/MacArch/Resources/Covers "$APP/Contents/Resources/Covers"
+ditto Apps/MacArch/Resources/Classics "$APP/Contents/Resources/Classics"
 # ditto keeps the framework's symlinks.
 ditto "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 

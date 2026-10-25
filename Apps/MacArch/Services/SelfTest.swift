@@ -30,6 +30,10 @@ enum SelfTest {
             }
             return
         }
+        if let folder = ProcessInfo.processInfo.environment["MACARCH_SELFTEST_CLASSICS"] {
+            LibrarySelfTest.runClassics(path, folder: folder, machine: machine)
+            return
+        }
         if let disc = ProcessInfo.processInfo.environment["MACARCH_SELFTEST_LIBRARY"] {
             LibrarySelfTest.run(path, disc: disc, machine: machine)
             return

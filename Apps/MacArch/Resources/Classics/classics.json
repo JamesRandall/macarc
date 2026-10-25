@@ -1,0 +1,953 @@
+{
+  "version": 1,
+  "source": "James Randall's Archimedes Top 25, with discs from the Archimedes Archive, https://arcarc.top/",
+  "archive": {
+    "id": "arcarc",
+    "title": "The Archimedes Archive",
+    "subtitle": "Explore thousands more Archimedes titles",
+    "pitch": "Explore thousands more Archimedes games, applications and magazine discs, preserved by the Archimedes Archive.",
+    "about": "The Archimedes Archive (arcarc) collects software for Acorn's Archimedes and RISC OS machines: games, applications, demos, magazine cover discs and PD libraries, as disc images for emulators and real machines.",
+    "url": "https://arcarc.top/games.html"
+  },
+  "games": [
+    {
+      "id": "starfighter3000",
+      "rank": 1,
+      "title": "Star Fighter 3000",
+      "publisher": "Fednet",
+      "year": 1994,
+      "description": "Spectacular 3D aerial combat, perhaps the ultimate technical showcase for the Archimedes: fly low over solid, shaded landscapes and take on whole fleets, mission after mission.",
+      "archivePageURL": "https://arcarc.top/archive/Games/S/Star%20Fighter%203000/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3",
+          "RISC OS 2"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3 or 2"
+      },
+      "discs": [
+        {
+          "label": "Disc",
+          "fileName": "Star Fighter 3000 (1994)(Fednet).adf",
+          "url": "https://arcarc.top/archive/Games/S/Star%20Fighter%203000/Star%20Fighter%203000%20(1994)(Fednet).adf",
+          "sha256": "a2162c315948b04342d7ba2ac354389646dc9df4fffced50378258289abed0f3",
+          "byteCount": 819200,
+          "discName": "SF3000"
+        }
+      ],
+      "start": {
+        "run": "!Star3000"
+      }
+    },
+    {
+      "id": "stuntracer2000",
+      "rank": 2,
+      "title": "Stunt Racer 2000",
+      "publisher": "The Fourth Dimension",
+      "year": 1993,
+      "description": "Brilliant polygonal stunt racing on elevated tracks, with loops, jumps and split-screen racing for two.",
+      "hint": "Disc 2 goes in by itself when the game asks for it. Click to carry on.",
+      "archivePageURL": "https://arcarc.top/archive/Games/S/Stunt%20Racer%202000/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3"
+      },
+      "discs": [
+        {
+          "label": "Disc 1",
+          "fileName": "Stunt Racer 2000 (1993)(Fourth Dimension)(Disk 1 of 2).hfe",
+          "url": "https://arcarc.top/archive/Games/S/Stunt%20Racer%202000/Stunt%20Racer%202000%20(1993)(Fourth%20Dimension)(Disk%201%20of%202).hfe",
+          "sha256": "71a66f762357970781af5434acdd726254937925e9112abce562122f080b74c1",
+          "byteCount": 2068480,
+          "discName": "StuntR1"
+        },
+        {
+          "label": "Disc 2",
+          "fileName": "Stunt Racer 2000 (1993)(Fourth Dimension)(Disk 2 of 2).hfe",
+          "url": "https://arcarc.top/archive/Games/S/Stunt%20Racer%202000/Stunt%20Racer%202000%20(1993)(Fourth%20Dimension)(Disk%202%20of%202).hfe",
+          "sha256": "d006953a82f2b40aef38e9bd00055a8a9154a374a63bd7a1ea0ec947bb19f5d0",
+          "byteCount": 2063872,
+          "discName": "StuntR2"
+        }
+      ],
+      "start": {
+        "run": "!Sr2000"
+      }
+    },
+    {
+      "id": "elite",
+      "rank": 3,
+      "title": "Elite",
+      "publisher": "Hybrid Technology",
+      "year": 1991,
+      "description": "Arguably the finest version of the original Elite: trade, fight and explore a universe that lives without you, where other ships go about their own business.",
+      "hint": "Elite loads onto the icon bar, and MacArch clicks its icon to play (on RISC OS 2, click it yourself).",
+      "archivePageURL": "https://arcarc.top/archive/Games/E/Elite/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3",
+          "RISC OS 2"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3 or 2"
+      },
+      "discs": [
+        {
+          "label": "Disc",
+          "fileName": "Elite (1991)(Hybrid Technology).adf",
+          "url": "https://arcarc.top/archive/Games/E/Elite/Elite%20(1991)(Hybrid%20Technology).adf",
+          "sha256": "f547de606363ac47c2cd66cc48a4a848ad7811a10701840d9835305a3687e689",
+          "byteCount": 819200,
+          "discName": "Elite"
+        }
+      ],
+      "start": {
+        "run": "!#lite",
+        "openDirectory": true
+      },
+      "clickIconBar": true
+    },
+    {
+      "id": "zarch",
+      "rank": 4,
+      "title": "Zarch",
+      "publisher": "Superior Software",
+      "year": 1987,
+      "authors": "David Braben",
+      "description": "David Braben's groundbreaking 3D shooter, the game that announced what the ARM could do. Steer the lander over a solid, scrolling landscape and stop the virus spreading.",
+      "archivePageURL": "https://arcarc.top/archive/Games/Z/Zarch/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3",
+          "RISC OS 2"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3 or 2"
+      },
+      "discs": [
+        {
+          "label": "Disc",
+          "fileName": "Zarch (1987)(Superior Software).adf",
+          "url": "https://arcarc.top/archive/Games/Z/Zarch/Zarch%20(1987)(Superior%20Software).adf",
+          "sha256": "bc082f7313cf8b20714f842cb30d5aec3eb4677f3acc3131f8b3235b20a6f86f",
+          "byteCount": 819200,
+          "discName": "Zarch"
+        }
+      ],
+      "start": {
+        "run": "!Zarch"
+      }
+    },
+    {
+      "id": "chocksaway",
+      "rank": 5,
+      "title": "Chocks Away",
+      "publisher": "The Fourth Dimension",
+      "year": 1990,
+      "description": "Wonderfully playable 3D biplane combat over the Western Front, alone or head to head on a split screen. The mission add-on disc is included.",
+      "hint": "Insert the maps disc when the game asks for it (Machine ▸ Next Disc).",
+      "archivePageURL": "https://arcarc.top/archive/Games/C/Chocks%20Away/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3",
+          "RISC OS 2"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3 or 2"
+      },
+      "discs": [
+        {
+          "label": "Disc 1",
+          "fileName": "Chocks Away (1990)(Fourth Dimension)(Disk 1 of 3).adf",
+          "url": "https://arcarc.top/archive/Games/C/Chocks%20Away/Chocks%20Away%20(1990)(Fourth%20Dimension)(Disk%201%20of%203).adf",
+          "sha256": "d15aa8426f9f4b5a399ddc992ee40b73352809da29de944802c07ccf986f9c92",
+          "byteCount": 819200,
+          "discName": "ChocksAway"
+        },
+        {
+          "label": "Maps disc",
+          "fileName": "Chocks Away (1990)(Fourth Dimension)(Disk 2 of 3)(Maps Disk).adf",
+          "url": "https://arcarc.top/archive/Games/C/Chocks%20Away/Chocks%20Away%20(1990)(Fourth%20Dimension)(Disk%202%20of%203)(Maps%20Disk).adf",
+          "sha256": "f1ee10f96fc42135789ff8b41e7b5a6918d8fc078622f8dad08103625af04f6b",
+          "byteCount": 819200,
+          "discName": "ChocksMaps"
+        },
+        {
+          "label": "Missions disc",
+          "fileName": "Chocks Away (1990)(Fourth Dimension)(Disk 3 of 3)(Mission Addon).adf",
+          "url": "https://arcarc.top/archive/Games/C/Chocks%20Away/Chocks%20Away%20(1990)(Fourth%20Dimension)(Disk%203%20of%203)(Mission%20Addon).adf",
+          "sha256": "a9dd349dfa0f7765dba50862de96636ee2837dcbb6587ab8ac051f582c707e83",
+          "byteCount": 819200
+        }
+      ],
+      "start": {
+        "run": "!Chocks"
+      }
+    },
+    {
+      "id": "nevryon",
+      "rank": 6,
+      "title": "Nevryon",
+      "publisher": "The Fourth Dimension",
+      "year": 1990,
+      "description": "A beautiful, polished R-Type-style scrolling shooter, with power-ups to collect and big guardians to bring down.",
+      "hint": "Levels 2 to 4 are on disc 2: insert it when the game asks (Machine ▸ Next Disc).",
+      "archivePageURL": "https://arcarc.top/archive/Games/N/Nevryon/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3",
+          "RISC OS 2"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3 or 2"
+      },
+      "discs": [
+        {
+          "label": "Disc 1",
+          "fileName": "Nevryon (Disc 1 of 2).adf",
+          "url": "https://arcarc.top/archive/Games/N/Nevryon/Nevryon%20(Disc%201%20of%202).adf",
+          "sha256": "69831ce537cccf0f0f69356050d0778f3b94afafae84a53460417a093f6eed97",
+          "byteCount": 819200,
+          "discName": "WILDPARTY"
+        },
+        {
+          "label": "Disc 2",
+          "fileName": "Nevryon (Disc 2 of 2).adf",
+          "url": "https://arcarc.top/archive/Games/N/Nevryon/Nevryon%20(Disc%202%20of%202).adf",
+          "sha256": "ca2db939f39a5b1a51c1e38fa2904628f35e4c02f8887e5cd73016710a294072",
+          "byteCount": 819200,
+          "discName": "ACID+VODKA"
+        }
+      ],
+      "start": {
+        "run": "!Nevryon"
+      }
+    },
+    {
+      "id": "conqueror",
+      "rank": 7,
+      "title": "Conqueror",
+      "publisher": "Superior Software",
+      "description": "Remarkable 3D tank combat with genuine tactical depth: command a squadron across the battlefield, or take the controls of one tank yourself.",
+      "archivePageURL": "https://arcarc.top/archive/Games/C/Conqueror/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3"
+      },
+      "discs": [
+        {
+          "label": "Disc",
+          "fileName": "Conqueror (19xx)(Superior Software)[a].adf",
+          "url": "https://arcarc.top/archive/Games/C/Conqueror/Conqueror%20(19xx)(Superior%20Software)%5Ba%5D.adf",
+          "sha256": "1a170f8a0e3c26f14c39328a20d3cfbd9753fd25f2e79b960779ca5bff9e1d2e",
+          "byteCount": 819200,
+          "discName": "Conqueror"
+        }
+      ],
+      "start": {
+        "run": "!Conqueror"
+      }
+    },
+    {
+      "id": "spheresofchaos",
+      "rank": 8,
+      "title": "Spheres of Chaos",
+      "publisher": "Matt Black Software",
+      "year": 1993,
+      "description": "Psychedelic Asteroids-style combat that fills the screen with colour, with superb multiplayer.",
+      "archivePageURL": "https://arcarc.top/archive/Games/S/Spheres%20of%20Chaos/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3"
+      },
+      "discs": [
+        {
+          "label": "Disc",
+          "fileName": "Spheres of Chaos (1993)(Matt Black Software).adf",
+          "url": "https://arcarc.top/archive/Games/S/Spheres%20of%20Chaos/Spheres%20of%20Chaos%20(1993)(Matt%20Black%20Software).adf",
+          "sha256": "f49fb282a87193f2120c10447f1dcf0b0bbf07b0bdeb350e6376e1dd8b3ceae6",
+          "byteCount": 819200,
+          "discName": "06_22_Thu"
+        }
+      ],
+      "start": {
+        "run": "!Chaos"
+      }
+    },
+    {
+      "id": "lemmings",
+      "rank": 9,
+      "title": "Lemmings",
+      "publisher": "Krisalis",
+      "year": 1991,
+      "description": "An excellent conversion of the puzzle classic, complete with specially arranged Archimedes music. Dig, build and block to get the lemmings home.",
+      "archivePageURL": "https://arcarc.top/archive/Games/L/Lemmings/",
+      "machine": {
+        "model": "A5000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3"
+        ],
+        "summary": "Acorn A5000, 2 MB, RISC OS 3, from a hard disc"
+      },
+      "discs": [
+        {
+          "label": "Archive",
+          "fileName": "Lemmings (1991)(Krisalis).zip",
+          "url": "https://arcarc.top/archive/Games/L/Lemmings/Lemmings%20(1991)(Krisalis).zip",
+          "sha256": "81ff42f0712a05abdaa3a83c8379826cfa48a2e7f04f785f63e612ef28cbe258",
+          "byteCount": 597922,
+          "kind": "hardDiscArchive"
+        }
+      ],
+      "start": {
+        "run": "!Lemmings"
+      }
+    },
+    {
+      "id": "e-type",
+      "rank": 10,
+      "title": "E-Type",
+      "publisher": "The Fourth Dimension",
+      "year": 1989,
+      "description": "Fast, impressive 3D driving across sprawling countryside, at the wheel of a Jaguar E-Type.",
+      "archivePageURL": "https://arcarc.top/archive/Games/E/E-Type/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3",
+          "RISC OS 2"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3 or 2"
+      },
+      "discs": [
+        {
+          "label": "Disc 1",
+          "fileName": "E-Type (1989)(4th Dimension)(Disk 1 of 2).adf",
+          "url": "https://arcarc.top/archive/Games/E/E-Type/E-Type%20(1989)(4th%20Dimension)(Disk%201%20of%202).adf",
+          "sha256": "558fd81de65e775d4a05d926ffe6ba5136b5491e0fecc6cfd39113e073ddefdd",
+          "byteCount": 819200,
+          "discName": "21_13_Wed"
+        },
+        {
+          "label": "Disc 2",
+          "fileName": "E-Type (1989)(4th Dimension)(Disk 2 of 2).adf",
+          "url": "https://arcarc.top/archive/Games/E/E-Type/E-Type%20(1989)(4th%20Dimension)(Disk%202%20of%202).adf",
+          "sha256": "8c15035d19b2d3a692ef34758cc02f9402e3a086c499a9221e60fa6327da82fa",
+          "byteCount": 819200,
+          "discName": "21_02_Fri"
+        }
+      ],
+      "start": {
+        "run": "!E-TYPE"
+      }
+    },
+    {
+      "id": "apocalypse",
+      "rank": 11,
+      "title": "Apocalypse",
+      "publisher": "The Fourth Dimension",
+      "year": 1990,
+      "description": "Frantic 3D arcade combat with something of a Battlezone feel, planet after planet.",
+      "hint": "Insert the planets disc when the title asks for it (Machine ▸ Next Disc), then press Space.",
+      "archivePageURL": "https://arcarc.top/archive/Games/A/Apocalypse/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3",
+          "RISC OS 2"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3 or 2"
+      },
+      "discs": [
+        {
+          "label": "Disc 1",
+          "fileName": "Apocalypse (1990)(Fourth Dimension)(Disk 1 of 2).adf",
+          "url": "https://arcarc.top/archive/Games/A/Apocalypse/Apocalypse%20(1990)(Fourth%20Dimension)(Disk%201%20of%202).adf",
+          "sha256": "a9b8f96fac1c4ad148e8d3f156f31686c2dd9436a2d481a7091372992bfe1da3",
+          "byteCount": 819200,
+          "discName": "Apocalypse"
+        },
+        {
+          "label": "Planets disc",
+          "fileName": "Apocalypse (1990)(Fourth Dimension)(Disk 2 of 2).adf",
+          "url": "https://arcarc.top/archive/Games/A/Apocalypse/Apocalypse%20(1990)(Fourth%20Dimension)(Disk%202%20of%202).adf",
+          "sha256": "85b589d64bc2e0b285223b6a41a56e19bf6dfb5e88e0439fcdd391f60caf1ce4",
+          "byteCount": 819200,
+          "discName": "Planets"
+        }
+      ],
+      "start": {
+        "run": "!Apocalyps"
+      }
+    },
+    {
+      "id": "cannonfodder",
+      "rank": 12,
+      "title": "Cannon Fodder",
+      "publisher": "Gamemodes",
+      "year": 1993,
+      "description": "One of the strongest conversions on the platform: Sensible Software's darkly funny war game, steering a squad with the mouse.",
+      "hint": "Insert disc 2 for the recruitment hill when the game asks (Machine ▸ Next Disc).",
+      "archivePageURL": "https://arcarc.top/archive/Games/C/Cannon%20Fodder/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3"
+      },
+      "discs": [
+        {
+          "label": "Disc 1",
+          "fileName": "Cannon Fodder (1993)(Gamemodes)(Disk 1 Of 3).adf",
+          "url": "https://arcarc.top/archive/Games/C/Cannon%20Fodder/Cannon%20Fodder%20(1993)(Gamemodes)(Disk%201%20Of%203).adf",
+          "sha256": "2f52394cb11f58a6f047e8f63336af6ce68d2713e43ff8bbf5a140e913eb1808",
+          "byteCount": 819200,
+          "discName": "CanFodder"
+        },
+        {
+          "label": "Disc 2",
+          "fileName": "Cannon Fodder (1993)(Gamemodes)(Disk 2 Of 3).adf",
+          "url": "https://arcarc.top/archive/Games/C/Cannon%20Fodder/Cannon%20Fodder%20(1993)(Gamemodes)(Disk%202%20Of%203).adf",
+          "sha256": "251c1166874e0c4db73037ce705b520900d988a5ce13728bdbee0202b558f495",
+          "byteCount": 819200,
+          "discName": "CFDisk2"
+        },
+        {
+          "label": "Disc 3",
+          "fileName": "Cannon Fodder (1993)(Gamemodes)(Disk 3 Of 3).adf",
+          "url": "https://arcarc.top/archive/Games/C/Cannon%20Fodder/Cannon%20Fodder%20(1993)(Gamemodes)(Disk%203%20Of%203).adf",
+          "sha256": "0d44463e7709b418550a615f7f7fb9f7097c50207099a5ae34cd95a3fa870e8e",
+          "byteCount": 819200,
+          "discName": "CFDisk3"
+        }
+      ],
+      "start": {
+        "run": "!Cannon"
+      }
+    },
+    {
+      "id": "dune2",
+      "rank": 13,
+      "title": "Dune II",
+      "editionLabel": "Version 1.07",
+      "publisher": "Virgin Games",
+      "year": 1995,
+      "description": "The foundational real-time strategy classic: harvest spice, build a base and fight for Arrakis.",
+      "hint": "Dune II comes on eight discs: insert each when the game asks for it (Machine ▸ Next Disc).",
+      "archivePageURL": "https://arcarc.top/archive/Games/D/Dune%20II/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 4096,
+        "roms": [
+          "RISC OS 3"
+        ],
+        "summary": "Acorn A3000, 4 MB, RISC OS 3"
+      },
+      "discs": [
+        {
+          "label": "Disc 1",
+          "fileName": "Dune II 1.07 (1995)(7AS Eclipse Virgen)(Disk 1 of 8).adf",
+          "url": "https://arcarc.top/archive/Games/D/Dune%20II/Dune%20II%201.07%20(1995)(7AS%20Eclipse%20Virgen)(Disk%201%20of%208).adf",
+          "sha256": "37918b2ba35383efbff70e9773e72085021a8944f027a1f74e58998726078279",
+          "byteCount": 819200,
+          "discName": "DuneII"
+        },
+        {
+          "label": "Disc 2",
+          "fileName": "Dune II 1.07 (1995)(7AS Eclipse Virgen)(Disk 2 of 8).adf",
+          "url": "https://arcarc.top/archive/Games/D/Dune%20II/Dune%20II%201.07%20(1995)(7AS%20Eclipse%20Virgen)(Disk%202%20of%208).adf",
+          "sha256": "90a248e9cda82f7336fd6944d63379b7d0f904c33ca3b64b4cffe0369debc6f4",
+          "byteCount": 819200,
+          "discName": "DuneII_2"
+        },
+        {
+          "label": "Disc 3",
+          "fileName": "Dune II 1.07 (1995)(7AS Eclipse Virgen)(Disk 3 of 8).adf",
+          "url": "https://arcarc.top/archive/Games/D/Dune%20II/Dune%20II%201.07%20(1995)(7AS%20Eclipse%20Virgen)(Disk%203%20of%208).adf",
+          "sha256": "008f8b22e8e8e51f3b8b2077f432cdff448d755e127c68d323d96f4bd34ba187",
+          "byteCount": 819200,
+          "discName": "DuneII_3"
+        },
+        {
+          "label": "Disc 4",
+          "fileName": "Dune II 1.07 (1995)(7AS Eclipse Virgen)(Disk 4 of 8).adf",
+          "url": "https://arcarc.top/archive/Games/D/Dune%20II/Dune%20II%201.07%20(1995)(7AS%20Eclipse%20Virgen)(Disk%204%20of%208).adf",
+          "sha256": "f2e16290c7c1125f682a19e0bca01af3c9d8c9223e7f8d981ce9123b29b5df2a",
+          "byteCount": 819200,
+          "discName": "DuneII_4"
+        },
+        {
+          "label": "Disc 5",
+          "fileName": "Dune II 1.07 (1995)(7AS Eclipse Virgen)(Disk 5 of 8).adf",
+          "url": "https://arcarc.top/archive/Games/D/Dune%20II/Dune%20II%201.07%20(1995)(7AS%20Eclipse%20Virgen)(Disk%205%20of%208).adf",
+          "sha256": "9cfeafc17b1a99b2e65585ed8e23f90cd04363bba24f3197544e3318cf5e5507",
+          "byteCount": 819200,
+          "discName": "DuneII_5"
+        },
+        {
+          "label": "Disc 6",
+          "fileName": "Dune II 1.07 (1995)(7AS Eclipse Virgen)(Disk 6 of 8).adf",
+          "url": "https://arcarc.top/archive/Games/D/Dune%20II/Dune%20II%201.07%20(1995)(7AS%20Eclipse%20Virgen)(Disk%206%20of%208).adf",
+          "sha256": "0ca5825f23e1911d456cab4533cee8bf67d4fddf9da352f4892830945d22ac98",
+          "byteCount": 819200,
+          "discName": "DuneII_6"
+        },
+        {
+          "label": "Disc 7",
+          "fileName": "Dune II 1.07 (1995)(7AS Eclipse Virgen)(Disk 7 of 8).adf",
+          "url": "https://arcarc.top/archive/Games/D/Dune%20II/Dune%20II%201.07%20(1995)(7AS%20Eclipse%20Virgen)(Disk%207%20of%208).adf",
+          "sha256": "eacccfb23be27fe42425ef09ec9d7297b3f6ce606f46dbe65ea33825ffe0d25c",
+          "byteCount": 819200,
+          "discName": "DuneII_7"
+        },
+        {
+          "label": "Disc 8",
+          "fileName": "Dune II 1.07 (1995)(7AS Eclipse Virgen)(Disk 8 of 8).adf",
+          "url": "https://arcarc.top/archive/Games/D/Dune%20II/Dune%20II%201.07%20(1995)(7AS%20Eclipse%20Virgen)(Disk%208%20of%208).adf",
+          "sha256": "bb7ab637afb7e7b0da4415982db9f4a56648c07d41293fb4536aba7e7eafe75b",
+          "byteCount": 819200,
+          "discName": "DuneII_8"
+        }
+      ],
+      "start": {
+        "run": "!Dune_II",
+        "openDirectory": true
+      },
+      "clickIconBar": true
+    },
+    {
+      "id": "simcity",
+      "rank": 14,
+      "title": "SimCity",
+      "publisher": "Krisalis",
+      "year": 1993,
+      "description": "The city-building classic, and a particularly natural fit for a mouse-driven RISC OS computer.",
+      "archivePageURL": "https://arcarc.top/archive/Games/S/Sim%20City/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3"
+      },
+      "discs": [
+        {
+          "label": "Disc",
+          "fileName": "Sim City (1993)(Krisalis Software).adf",
+          "url": "https://arcarc.top/archive/Games/S/Sim%20City/Sim%20City%20(1993)(Krisalis%20Software).adf",
+          "sha256": "dc9f575997c16b51fa3917865977d31d1bfe7e29d51639b70006908797cece2d",
+          "byteCount": 814080,
+          "discName": "SimCity"
+        }
+      ],
+      "start": {
+        "run": "!SimCity",
+        "openDirectory": true
+      },
+      "clickIconBar": true
+    },
+    {
+      "id": "gods",
+      "rank": 15,
+      "title": "Gods",
+      "publisher": "Krisalis",
+      "description": "The Bitmap Brothers' platform adventure: a hero, a labyrinth of traps and puzzles, and some of the best music on the machine.",
+      "hint": "Press Space past the passwords notice and the intro. Disc 2 goes in when the game asks for it.",
+      "archivePageURL": "https://arcarc.top/archive/Games/G/Gods/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3",
+          "RISC OS 2"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3 or 2"
+      },
+      "discs": [
+        {
+          "label": "Disc 1",
+          "fileName": "Gods (19xx)(Krisalis)(Disc 1 of 2).adf",
+          "url": "https://arcarc.top/archive/Games/G/Gods/Gods%20(19xx)(Krisalis)(Disc%201%20of%202).adf",
+          "sha256": "be81e5878e30395c9685690ad9b3017f2d19bad314f60de00c3b58e684f7b889",
+          "byteCount": 819200,
+          "discName": "Gods1"
+        },
+        {
+          "label": "Disc 2",
+          "fileName": "Gods (19xx)(Krisalis)(Disc 2 of 2).adf",
+          "url": "https://arcarc.top/archive/Games/G/Gods/Gods%20(19xx)(Krisalis)(Disc%202%20of%202).adf",
+          "sha256": "86e2e99fcda7f364d5f29b9b8bc749228a2c05bccdee256d4b8443fbf56a5397",
+          "byteCount": 819200,
+          "discName": "Gods2"
+        }
+      ],
+      "start": {
+        "run": "!Gods"
+      }
+    },
+    {
+      "id": "pacmania",
+      "rank": 16,
+      "title": "Pac-Mania",
+      "publisher": "Krisalis",
+      "year": 1991,
+      "description": "An excellent pseudo-3D conversion of the arcade game: Pac-Man, at an angle, with a jump.",
+      "archivePageURL": "https://arcarc.top/archive/Games/P/Pacmania/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3",
+          "RISC OS 2"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3 or 2"
+      },
+      "discs": [
+        {
+          "label": "Disc",
+          "fileName": "Pacmania (1991)(Krisalis).adf",
+          "url": "https://arcarc.top/archive/Games/P/Pacmania/Pacmania%20(1991)(Krisalis).adf",
+          "sha256": "8a8ff214c5498038ab5b35fd6d1f8e1c7cef83f5351dd730058e48900a354304",
+          "byteCount": 814080
+        }
+      ],
+      "start": {
+        "run": "!PacMania"
+      }
+    },
+    {
+      "id": "bughunter",
+      "rank": 17,
+      "title": "Bug Hunter in Space",
+      "publisher": "Minerva",
+      "year": 1990,
+      "description": "Clever, addictive puzzle gameplay that doesn't rely on technical fireworks. The disc also has Moon Dash.",
+      "archivePageURL": "https://arcarc.top/archive/Games/B/Bug%20Hunter%20+%20Moon%20Dash/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3",
+          "RISC OS 2"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3 or 2"
+      },
+      "discs": [
+        {
+          "label": "Disc",
+          "fileName": "Bug Hunter And Moon Dash (1990)(Minerva)(H).adf",
+          "url": "https://arcarc.top/archive/Games/B/Bug%20Hunter%20+%20Moon%20Dash/Bug%20Hunter%20And%20Moon%20Dash%20(1990)(Minerva)(H).adf",
+          "sha256": "09cd38b12fe12b4326d476d2b5ec9b4e4fbb5e94a67411bf598b09919589c9de",
+          "byteCount": 819200,
+          "discName": "BugHunter"
+        }
+      ],
+      "start": {
+        "run": "!BugHunter"
+      }
+    },
+    {
+      "id": "speedball2",
+      "rank": 18,
+      "title": "Speedball 2: Brutal Deluxe",
+      "publisher": "Krisalis",
+      "year": 1992,
+      "description": "Brutal futuristic sports action from the Bitmap Brothers: buy players, win games, ice the opposition.",
+      "archivePageURL": "https://arcarc.top/archive/Games/S/Speedball%202%20-%20Brutal%20Deluxe/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3",
+          "RISC OS 2"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3 or 2"
+      },
+      "discs": [
+        {
+          "label": "Disc",
+          "fileName": "Speedball 2 - Brutal Deluxe (1992)(Krisalis).adf",
+          "url": "https://arcarc.top/archive/Games/S/Speedball%202%20-%20Brutal%20Deluxe/Speedball%202%20-%20Brutal%20Deluxe%20(1992)(Krisalis).adf",
+          "sha256": "d9384118af9909b52fbdc2001d181191e17d96f2721d8b4dd6c3ee2318bf7ab2",
+          "byteCount": 814080,
+          "discName": "SpeedBall2"
+        }
+      ],
+      "start": {
+        "run": "!SpeedBall"
+      }
+    },
+    {
+      "id": "lotusturbochallenge2",
+      "rank": 19,
+      "title": "Lotus Turbo Challenge 2",
+      "publisher": "Krisalis",
+      "description": "Fast, colourful arcade racing through forests, deserts and snow, alone or split-screen.",
+      "hint": "Lotus may ask for a code from its start-up instructions, which the archive has beside the discs.",
+      "archivePageURL": "https://arcarc.top/archive/Games/L/Lotus%20Turbo%20Challenge%202/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3",
+          "RISC OS 2"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3 or 2"
+      },
+      "discs": [
+        {
+          "label": "Disc 1",
+          "fileName": "Lotus Turbo Challenge 2 (19xx)(Krisalis)(Disc 1 of 2).adf",
+          "url": "https://arcarc.top/archive/Games/L/Lotus%20Turbo%20Challenge%202/Lotus%20Turbo%20Challenge%202%20(19xx)(Krisalis)(Disc%201%20of%202).adf",
+          "sha256": "30e59196bc6ccaaee189eb6ec548628d98e9dba021bd4f58be8d88add51a097e",
+          "byteCount": 819200,
+          "discName": "Lotus2-D1"
+        },
+        {
+          "label": "Disc 2",
+          "fileName": "Lotus Turbo Challenge 2 (19xx)(Krisalis)(Disc 2 of 2).adf",
+          "url": "https://arcarc.top/archive/Games/L/Lotus%20Turbo%20Challenge%202/Lotus%20Turbo%20Challenge%202%20(19xx)(Krisalis)(Disc%202%20of%202).adf",
+          "sha256": "29e8cacd7afcccbd3245aa8693152e85a08896ec56f945261a2b7684f3351866",
+          "byteCount": 819200,
+          "discName": "Lotus2-D2"
+        }
+      ],
+      "start": {
+        "run": "!LOTUS"
+      }
+    },
+    {
+      "id": "swiv",
+      "rank": 20,
+      "title": "SWIV",
+      "publisher": "Krisalis",
+      "year": 1992,
+      "description": "An outstanding vertically scrolling shoot-'em-up, especially with two players: one in the helicopter, one in the jeep.",
+      "archivePageURL": "https://arcarc.top/archive/Games/S/Swiv/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3",
+          "RISC OS 2"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3 or 2"
+      },
+      "discs": [
+        {
+          "label": "Disc",
+          "fileName": "Swiv (1992)(Krisalis).adf",
+          "url": "https://arcarc.top/archive/Games/S/Swiv/Swiv%20(1992)(Krisalis).adf",
+          "sha256": "4a22d38fd18732c4fb42f83f1482553976f39214a221810ba51f4ecd84ff9799",
+          "byteCount": 814080,
+          "discName": "SWIV"
+        }
+      ],
+      "start": {
+        "run": "!Swiv"
+      }
+    },
+    {
+      "id": "airsupremacy",
+      "rank": 21,
+      "title": "Air Supremacy",
+      "publisher": "Superior Software",
+      "description": "An ambitious 3D military flight simulation, with missions over solid landscapes.",
+      "hint": "Air Supremacy doesn't get past its loading screen in MacArch yet.",
+      "archivePageURL": "https://arcarc.top/archive/Games/A/Air%20Supremacy/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3",
+          "RISC OS 2"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3 or 2"
+      },
+      "discs": [
+        {
+          "label": "Disc",
+          "fileName": "Air Supremacy ()(Superior).adf",
+          "url": "https://arcarc.top/archive/Games/A/Air%20Supremacy/Air%20Supremacy%20()(Superior).adf",
+          "sha256": "d6eb39b98b9c786b15a67449c451ad1b3501ebc452ee3c372c5af03d98b07090",
+          "byteCount": 819200
+        }
+      ],
+      "start": {
+        "run": "!AirSupmcy"
+      }
+    },
+    {
+      "id": "zool",
+      "rank": 22,
+      "title": "Zool",
+      "publisher": "Gremlin",
+      "year": 1993,
+      "description": "One of the machine's most polished platform games: the ninja from the Nth dimension, at full speed.",
+      "hint": "Zool asks for a code from its manual's code sheet before it starts, and the archive doesn't have the sheet.",
+      "archivePageURL": "https://arcarc.top/archive/Games/Z/Zool/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3"
+      },
+      "discs": [
+        {
+          "label": "Disc 1",
+          "fileName": "Zool (1993)(Gremlin)(Disk 1 of 2)[Need Manual].adf",
+          "url": "https://arcarc.top/archive/Games/Z/Zool/Zool%20(1993)(Gremlin)(Disk%201%20of%202)%5BNeed%20Manual%5D.adf",
+          "sha256": "fd5c1ed9257bee7d952552241040d1200ec667ba9d2c0ce2a83efd5d41a9401c",
+          "byteCount": 819200,
+          "discName": "ZoolDisc1"
+        },
+        {
+          "label": "Disc 2",
+          "fileName": "Zool (1993)(Gremlin)(Disk 2 of 2)[Need Manual].adf",
+          "url": "https://arcarc.top/archive/Games/Z/Zool/Zool%20(1993)(Gremlin)(Disk%202%20of%202)%5BNeed%20Manual%5D.adf",
+          "sha256": "5115652d88a675ee20c086fa69f7a498ff187f5536f1615e4adb4b091a56a152",
+          "byteCount": 819200,
+          "discName": "Disk2"
+        }
+      ],
+      "start": {
+        "run": "!Zool"
+      }
+    },
+    {
+      "id": "dropship",
+      "rank": 23,
+      "title": "Drop Ship",
+      "publisher": "The Fourth Dimension",
+      "year": 1990,
+      "description": "An overlooked, challenging arcade shooter with impressive presentation.",
+      "hint": "The stages are on disc 2: insert it when the game asks (Machine ▸ Next Disc).",
+      "archivePageURL": "https://arcarc.top/archive/Games/D/Drop%20Ship/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3",
+          "RISC OS 2"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3 or 2"
+      },
+      "discs": [
+        {
+          "label": "Disc 1",
+          "fileName": "Drop Ship (1990)(The Fourth Dimension)(Disk 1 of 2).adf",
+          "url": "https://arcarc.top/archive/Games/D/Drop%20Ship/Drop%20Ship%20(1990)(The%20Fourth%20Dimension)(Disk%201%20of%202).adf",
+          "sha256": "1ef9e63796edc6cc12b97ecf2c16d79327b52394cc177063848d10f067572502",
+          "byteCount": 819200
+        },
+        {
+          "label": "Stages disc",
+          "fileName": "Drop Ship (1990)(The Fourth Dimension)(Disk 2 of 2).adf",
+          "url": "https://arcarc.top/archive/Games/D/Drop%20Ship/Drop%20Ship%20(1990)(The%20Fourth%20Dimension)(Disk%202%20of%202).adf",
+          "sha256": "09fac5b596834794144598839b6523dc5cecbf57d29b9d068fac2d095f8e82dd",
+          "byteCount": 819200,
+          "discName": "Stages"
+        }
+      ],
+      "start": {
+        "run": "!Drop#Ship"
+      }
+    },
+    {
+      "id": "holedout",
+      "rank": 24,
+      "title": "Holed Out",
+      "editionLabel": "Holed Out 2",
+      "publisher": "The Fourth Dimension",
+      "year": 1989,
+      "description": "A superb golf game, continuing the Superior Software tradition. The Extra Courses disc is included.",
+      "archivePageURL": "https://arcarc.top/archive/Games/H/Holed%20Out%202/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3",
+          "RISC OS 2"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3 or 2"
+      },
+      "discs": [
+        {
+          "label": "Disc",
+          "fileName": "Holed Out 2 (1989)(The Fourth Dimension).adf",
+          "url": "https://arcarc.top/archive/Games/H/Holed%20Out%202/Holed%20Out%202%20(1989)(The%20Fourth%20Dimension).adf",
+          "sha256": "7b6e993a5f0a662e04de35f95b3fc598cbd1a11a76980693fee0154769490671",
+          "byteCount": 819200,
+          "discName": "HOLEDOUT"
+        },
+        {
+          "label": "Extra courses",
+          "fileName": "Holed Out 2 - Extra Courses Vol 1 (1989)(The Fourth Dimension).adf",
+          "url": "https://arcarc.top/archive/Games/H/Holed%20Out%202/Holed%20Out%202%20-%20Extra%20Courses%20Vol%201%20(1989)(The%20Fourth%20Dimension).adf",
+          "sha256": "c6159f8fcf567bed6c3ff55ca0379cb0f49c502c148d02ded9f9350b3bdf1a68",
+          "byteCount": 819200
+        }
+      ],
+      "start": {
+        "run": "!Holedout"
+      }
+    },
+    {
+      "id": "repton4",
+      "rank": 25,
+      "title": "Repton 4: Ego",
+      "publisher": "Superior Software",
+      "year": 1992,
+      "description": "An interesting reinvention of the classic Acorn puzzle series. The disc has a Passwords file for the later levels.",
+      "archivePageURL": "https://arcarc.top/archive/Games/E/Ego%20-%20Repton%204/",
+      "machine": {
+        "model": "A3000",
+        "ramKB": 2048,
+        "roms": [
+          "RISC OS 3",
+          "RISC OS 2"
+        ],
+        "summary": "Acorn A3000, 2 MB, RISC OS 3 or 2"
+      },
+      "discs": [
+        {
+          "label": "Disc",
+          "fileName": "EGO - Repton 4 (1992)(Superior Software).adf",
+          "url": "https://arcarc.top/archive/Games/E/Ego%20-%20Repton%204/EGO%20-%20Repton%204%20(1992)(Superior%20Software).adf",
+          "sha256": "de288dc02c1ed102adcee2b10af998faabf5b570fdde75e59bed75a1d9b3e998",
+          "byteCount": 814080,
+          "discName": "Repton4"
+        }
+      ],
+      "start": {
+        "run": "!Repton4"
+      }
+    }
+  ]
+}

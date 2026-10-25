@@ -24,9 +24,10 @@ struct MachineToolbar: CustomizableToolbarContent {
             } label: {
                 Label("Disc", systemImage: "opticaldiscdrive")
             } primaryAction: {
-                machine.openDisc()
+                // Playing a Classic on several discs: the next of them.
+                if machine.sessionDiscsActive { machine.insertNextSessionDisc() } else { machine.openDisc() }
             }
-            .help("Insert a disc in drive 0; hold for more")
+            .help(machine.sessionDiscsActive ? "\(machine.nextSessionDiscTitle) (⌥⌘N); hold for the game’s other discs" : "Insert a disc in drive 0; hold for more")
         }
 
         ToolbarItem(id: "hardDisc") {
@@ -185,6 +186,14 @@ private struct DiscItems: View {
     let machine: MachineController
 
     var body: some View {
+        if machine.sessionDiscsActive, let session = machine.session {
+            Section(session.title) {
+                ForEach(Array(session.discLabels.enumerated()), id: \.offset) { index, label in
+                    Toggle(label, isOn: Binding(get: { machine.sessionDisc == index }, set: { _ in machine.insertSessionDisc(index) }))
+                }
+            }
+            Divider()
+        }
         Button("Open Disc…") { machine.openDisc() }
         RecentDiscsMenu(machine: machine)
         Divider()
