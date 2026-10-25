@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "macarch",
+      "request": "launch",
+      "name": "Run BASIC on the Archimedes",
+      "basic": "${workspaceFolder}/primes.bas",
+      "stopOnEntry": true
+    },
+    {
+      "type": "macarch",
+      "request": "launch",
+      "name": "Run BASIC on an A5000",
+      "basic": "${workspaceFolder}/primes.bas",
+      "model": "A5000"
+    }
+  ]
+}

@@ -69,6 +69,12 @@ public final class Debugger {
         case interrupt(String)
         case requested
         case historyStart
+        /// A BASIC breakpoint, on `line`.
+        case basicBreakpoint(id: Int, line: Int)
+        /// A BASIC step reached its statement.
+        case basicStepped
+        /// A BASIC error (see `basic.error`).
+        case basicError(number: Int)
 
         public var description: String {
             switch self {
@@ -79,6 +85,17 @@ public final class Debugger {
             case .interrupt(let v): return "\(v) taken"
             case .requested: return "stopped"
             case .historyStart: return "reached the start of the rewind history"
+            case .basicBreakpoint(let id, let line): return "BASIC breakpoint \(id) at line \(line)"
+            case .basicStepped: return "BASIC step finished"
+            case .basicError(let number): return "BASIC error \(number)"
+            }
+        }
+
+        /// A stop in a BASIC program.
+        public var isBasic: Bool {
+            switch self {
+            case .basicBreakpoint, .basicStepped, .basicError: true
+            default: false
             }
         }
     }
@@ -120,7 +137,7 @@ public final class Debugger {
     public private(set) var stopCount = 0
     public var isStopped: Bool { stopReason != nil }
     /// A step or run-to command is under way (the UI's begin).
-    public var isRunningCommand: Bool { command != nil }
+    public var isRunningCommand: Bool { command != nil || basicIfCreated?.isStepping == true }
 
     var command: RunCommand?
     var armMode: UInt32 = 0
@@ -151,13 +168,26 @@ public final class Debugger {
     /// Forces the hooks on (reverse search).
     var forceHooks = false
 
+    private var basicIfCreated: BasicDebugger?
+    /// BASIC programs' breakpoints, steps and errors (created when first used).
+    public var basic: BasicDebugger {
+        if let b = basicIfCreated { return b }
+        let b = BasicDebugger(debugger: self)
+        basicIfCreated = b
+        return b
+    }
+    /// The instructions BASIC's hooks are on (unaligned, so never, when off).
+    var basicHooks: (UInt32, UInt32) = (1, 1)
+
     init(machine: Machine) { self.machine = machine }
 
     // MARK: Hooks
 
     /// Turns the CPU's (and VIDC's) calls into the debugger on only when needed.
     func updateHooks() {
+        basicHooks = basicIfCreated?.hooks ?? (1, 1)
         let any = breakpoints.contains { $0.enabled } || command != nil || trace != nil || profiling || forceHooks
+            || basicHooks.0 != 1
         executeKinds = breakpoints.contains { $0.enabled && $0.kind.contains(.execute) }
         dataKinds = breakpoints.contains { $0.enabled && !$0.kind.intersection(.access).isEmpty }
         cpu.debugHooks = any
@@ -267,6 +297,7 @@ public final class Debugger {
     // MARK: Stops and commands
 
     public func resume() {
+        basicIfCreated?.resumed()
         stopReason = nil
         pendingDataStop = nil
         videoEvent = nil
@@ -280,6 +311,7 @@ public final class Debugger {
         stopReason = r
         stopCount += 1
         command = nil
+        if basicIfCreated?.isStepping == true { basicIfCreated?.stopped() }
         machine.memc.stopAt = 0 // end the current CPU slice
         updateHooks()
     }
@@ -314,6 +346,32 @@ public final class Debugger {
         updateHooks()
     }
 
+    /// Starts a BASIC step (from anywhere but a BASIC stop, to the next
+    /// statement: Pause in BASIC) and returns.
+    public func begin(basic step: BasicStep) {
+        let origin = basic.origin
+        resume()
+        basic.arm(step, from: origin)
+    }
+
+    /// Runs a BASIC step until it stops the machine or `maxTicks` pass.
+    @discardableResult
+    public func run(basic step: BasicStep, maxTicks: UInt64, advance: (UInt64) -> Void) -> StopReason? {
+        let origin = basic.origin
+        resume()
+        basic.arm(step, from: origin)
+        defer { basic.disarm() }
+        var remaining = maxTicks
+        while stopReason == nil && remaining > 0 {
+            let slice = min(remaining, 240_000)
+            let start = machine.ticks
+            advance(slice)
+            let used = machine.ticks &- start
+            remaining = used >= remaining ? 0 : remaining - max(used, 1)
+        }
+        return stopReason
+    }
+
     /// Runs `c` until it stops the machine or `maxTicks` pass (tools).
     /// `advance` runs the machine (keeping rewind and the display current).
     @discardableResult
@@ -340,6 +398,10 @@ public final class Debugger {
         if let observe = replayObserver { observe(.execute(pc, machine.ticks)); return false }
         if trace != nil { record(pc) }
         if let v = videoEvent { videoEvent = nil; stop(v); return true }
+        if (pc == basicHooks.0 || pc == basicHooks.1) && resumeAddress != pc {
+            basic.executing(pc)
+            if stopReason != nil { return true }
+        }
         if let c = command, instructionsSinceArm > 0 {
             let mode = cpu.psr & 3
             switch c {
@@ -450,6 +512,7 @@ public final class Debugger {
         log = other.log
         logTotal = other.logTotal
         if other.traceCapacity > 0 { trace = RingBuffer(capacity: other.traceCapacity) }
+        if let b = other.basicIfCreated { basic.adopt(b) }
         updateHooks()
     }
 

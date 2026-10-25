@@ -55,6 +55,27 @@
             <key>LSItemContentTypes</key>
             <array><string>com.accidentalfish.macarch.state</string></array>
         </dict>
+        <dict>
+            <key>CFBundleTypeName</key><string>BBC BASIC Program</string>
+            <key>CFBundleTypeRole</key><string>Viewer</string>
+            <key>LSHandlerRank</key><string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array><string>com.accidentalfish.macarch.bas</string></array>
+        </dict>
+    </array>
+    <key>UTImportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key><string>com.accidentalfish.macarch.bas</string>
+            <key>UTTypeDescription</key><string>BBC BASIC program</string>
+            <key>UTTypeConformsTo</key>
+            <array><string>public.data</string></array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array><string>bas</string></array>
+            </dict>
+        </dict>
     </array>
     <key>UTExportedTypeDeclarations</key>
     <array>

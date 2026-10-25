@@ -9,12 +9,21 @@ struct DebuggerWindow: View {
 
     var body: some View {
         HSplitView {
-            VSplitView {
-                DisassemblyView(model: model).frame(minHeight: 220, idealHeight: 420)
-                MemoryView(model: model).frame(minHeight: 180, idealHeight: 300)
+            if model.view.basic {
+                VSplitView {
+                    BasicListingView(model: model).frame(minHeight: 220, idealHeight: 440)
+                    BasicVariablesView(model: model).frame(minHeight: 160, idealHeight: 280)
+                }
+                .frame(minWidth: 560, idealWidth: 680)
+                BasicSidebar(model: model).frame(minWidth: 320, idealWidth: 380)
+            } else {
+                VSplitView {
+                    DisassemblyView(model: model).frame(minHeight: 220, idealHeight: 420)
+                    MemoryView(model: model).frame(minHeight: 180, idealHeight: 300)
+                }
+                .frame(minWidth: 560, idealWidth: 680)
+                DebuggerSidebar(model: model).frame(minWidth: 320, idealWidth: 380)
             }
-            .frame(minWidth: 560, idealWidth: 680)
-            DebuggerSidebar(model: model).frame(minWidth: 320, idealWidth: 380)
         }
         .toolbar { DebuggerToolbar(model: model) }
         .onAppear { model.start() }
@@ -23,9 +32,64 @@ struct DebuggerWindow: View {
 }
 
 struct DebuggerToolbar: ToolbarContent {
-    let model: DebuggerModel
+    @Bindable var model: DebuggerModel
 
     var body: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            Picker("View", selection: $model.view.basic) {
+                Text("Machine Code").tag(false)
+                Text("BASIC").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .help("Debug machine code, or a BASIC program by its lines")
+        }
+        if model.view.basic {
+            basicItems
+        } else {
+            machineCodeItems
+        }
+        ToolbarItem(placement: .status) {
+            Text(statusText)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+
+    private var f6: KeyEquivalent { KeyEquivalent(Character(UnicodeScalar(NSF6FunctionKey)!)) }
+    private var f7: KeyEquivalent { KeyEquivalent(Character(UnicodeScalar(NSF7FunctionKey)!)) }
+    private var f8: KeyEquivalent { KeyEquivalent(Character(UnicodeScalar(NSF8FunctionKey)!)) }
+
+    @ToolbarContentBuilder private var basicItems: some ToolbarContent {
+        ToolbarItemGroup {
+            Button { model.basicPauseOrContinue() } label: {
+                Label(model.isStopped ? "Continue" : "Pause", systemImage: model.isStopped ? "play.fill" : "pause.fill")
+            }
+            .keyboardShortcut("y", modifiers: [.command, .control])
+            .help(model.isStopped ? "Continue (⌃⌘Y)" : "Pause (⌃⌘Y): at the next BASIC statement")
+            Button { model.basicStep(.over) } label: { Label("Step Over", systemImage: "arrow.turn.down.right") }
+                .keyboardShortcut(f6, modifiers: [])
+                .help("Step over (F6): to the next statement, running PROCs, FNs and GOSUBs through")
+                .disabled(!model.isStopped)
+            Button { model.basicStep(.into) } label: { Label("Step Into", systemImage: "arrow.down.to.line") }
+                .keyboardShortcut(f7, modifiers: [])
+                .help("Step into (F7): to the next statement, into PROCs, FNs and GOSUBs")
+                .disabled(!model.isStopped)
+            Button { model.basicStep(.out) } label: { Label("Step Out", systemImage: "arrow.up.to.line") }
+                .keyboardShortcut(f8, modifiers: [])
+                .help("Step out (F8): until this PROC, FN or subroutine returns")
+                .disabled(!model.isStopped)
+        }
+    }
+
+    private var statusText: String {
+        guard let s = model.snapshot else { return "" }
+        if let reason = s.stopReason { return "Stopped: \(reason)" }
+        if s.isRunningCommand && s.view.basic { return "Running to a BASIC statement…" }
+        return s.isRunningCommand ? "Stepping…" : "Running"
+    }
+
+    @ToolbarContentBuilder private var machineCodeItems: some ToolbarContent {
         ToolbarItemGroup {
             let stopped = model.isStopped
             Button { model.pauseOrContinue() } label: {
@@ -61,12 +125,6 @@ struct DebuggerToolbar: ToolbarContent {
                 Label("Step By", systemImage: "forward.frame")
             }
             .help("Step to the next scanline, frame or interrupt")
-        }
-        ToolbarItem(placement: .status) {
-            Text(model.snapshot.map { s in s.stopReason.map { "Stopped: \($0)" } ?? (s.isRunningCommand ? "Stepping…" : "Running") } ?? "")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
         }
     }
 }

@@ -196,6 +196,79 @@ final class DAPTests: XCTestCase {
         try client.request("disconnect")
     }
 
+    func testDebuggingABASICProgram() throws {
+        let rom = Self.root + "/roms/riscos3_11"
+        guard FileManager.default.fileExists(atPath: rom) else { throw XCTSkip("needs roms/riscos3_11") }
+        let primes = Self.root + "/Examples/hello-basic/primes.bas"
+        let host = try RunningHost(rom: rom)
+        defer { host.stop() }
+        let client = DAPClient(host: host)
+        let initialize = try client.request("initialize", ["adapterID": "macarch"])
+        let filters = (initialize["body"] as? [String: Any])?["exceptionBreakpointFilters"] as? [[String: Any]] ?? []
+        XCTAssertEqual(filters.map { $0["filter"] as? String }, ["basicUntrapped", "basicAll"])
+        _ = try client.event("initialized")
+
+        let launch = try client.request("launch", ["basic": primes], timeout: 120)
+        XCTAssertEqual(launch["success"] as? Bool, true, "\(launch)")
+        // Text line 24 is PROCshow's count%=count%+1 (BASIC line 220): stop
+        // there the third time (count% is 2: 2 and 3 found).
+        let set = try client.request("setBreakpoints", ["source": ["path": primes], "breakpoints": [["line": 24, "condition": "count%=2"]]])
+        let bps = (set["body"] as? [String: Any])?["breakpoints"] as? [[String: Any]] ?? []
+        XCTAssertEqual(bps.first?["verified"] as? Bool, true, "\(set)")
+        XCTAssertEqual(bps.first?["line"] as? Int, 24)
+        try client.request("setExceptionBreakpoints", ["filters": ["basicUntrapped"]])
+        try client.request("configurationDone")
+
+        guard let stop = try? client.event("stopped", timeout: 60) else {
+            let screen = host.inspect { $0.screenText.joined(separator: "\n") } ?? ""
+            let state = host.inspect { m in "prompt=\(m.debugger.basic.isAtPrompt) bps=\(m.debugger.basic.breakpoints) listing=\(m.debugger.basic.listing().prefix(3))" } ?? ""
+            XCTFail("stdout: \(client.stdout())\nscreen:\n\(screen)\n\(state)")
+            return
+        }
+        XCTAssertEqual((stop["body"] as? [String: Any])?["reason"] as? String, "breakpoint", "\(stop)")
+        func frames() throws -> [[String: Any]] {
+            let trace = try client.request("stackTrace", ["threadId": 1])
+            return (trace["body"] as? [String: Any])?["stackFrames"] as? [[String: Any]] ?? []
+        }
+        var stack = try frames()
+        XCTAssertEqual(stack.map { $0["name"] as? String }, ["PROCshow", "main program"])
+        XCTAssertEqual(stack.map { $0["line"] as? Int }, [24, 6])
+        XCTAssertEqual((stack.first?["source"] as? [String: Any])?["path"] as? String, primes)
+        // The call's statement (the whole IF: THEN doesn't start another).
+        XCTAssertEqual(stack.last?["column"] as? Int, 3)
+
+        let scopes = try client.request("scopes", ["frameId": stack[0]["id"] as? Int ?? 0])
+        XCTAssertEqual(((scopes["body"] as? [String: Any])?["scopes"] as? [[String: Any]])?.first?["name"] as? String, "Locals")
+        let locals = try client.request("variables", ["variablesReference": 100])
+        let rows = (locals["body"] as? [String: Any])?["variables"] as? [[String: Any]] ?? []
+        XCTAssertEqual(rows.map { $0["name"] as? String }, ["p%"])
+        XCTAssertEqual(rows.first?["value"] as? String, "5")
+        let sum = try client.request("evaluate", ["expression": "count%*10+p%", "frameId": stack[0]["id"] as? Int ?? 0])
+        XCTAssertEqual((sum["body"] as? [String: Any])?["result"] as? String, "25")
+        let changed = try client.request("setVariable", ["variablesReference": 100, "name": "p%", "value": "7"])
+        XCTAssertEqual((changed["body"] as? [String: Any])?["value"] as? String, "7")
+
+        // Out to the main program, then over a statement.
+        try client.request("stepOut", ["threadId": 1]); _ = try client.event("stopped")
+        stack = try frames()
+        XCTAssertEqual(stack.map { $0["name"] as? String }, ["main program"])
+        XCTAssertEqual(stack.first?["line"] as? Int, 7, "NEXT")
+        try client.request("next", ["threadId": 1]); _ = try client.event("stopped")
+        XCTAssertEqual(try frames().first?["line"] as? Int, 6)
+
+        // Into FNprime.
+        try client.request("stepIn", ["threadId": 1]); _ = try client.event("stopped")
+        XCTAssertEqual(try frames().first?["name"] as? String, "FNprime")
+
+        try client.request("setBreakpoints", ["source": ["path": primes], "breakpoints": []])
+        try client.request("continue", ["threadId": 1])
+        let deadline = Date().addingTimeInterval(20)
+        while !client.stdout().contains("primes") && Date() < deadline { Thread.sleep(forTimeInterval: 0.1) }
+        XCTAssertTrue(client.stdout().contains("2 3 7 7 11 13"), client.stdout())
+        XCTAssertTrue(client.stdout().contains("Found 25 primes"), client.stdout())
+        try client.request("disconnect")
+    }
+
     func testAssemblyErrorsFailTheLaunch() throws {
         let dir = NSTemporaryDirectory() + "dap-\(UUID().uuidString)"
         try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)

@@ -278,6 +278,18 @@ public func commandPrompt(_ s: AgentSession) throws {
     }
 }
 
+/// Gets to BASIC's prompt: from the desktop or the * prompt, starts BASIC.
+public func basicPrompt(_ s: AgentSession) throws {
+    let m = try s.require()
+    if m.debugger.basic.isAtPrompt { return }
+    guard m.debugger.basic.interpreter != nil else { throw ToolError(message: "this ROM's BASIC isn't one the debugger knows") }
+    try commandPrompt(s)
+    m.scheduleTyping("BASIC\n", intervalMs: 40)
+    s.advance(until: { m.pendingInputEvents == 0 }, maxSeconds: 5)
+    _ = runUntilIdle(s, maxSeconds: 10)
+    guard m.debugger.basic.isAtPrompt else { throw ToolError(message: "couldn't get to BASIC's prompt") }
+}
+
 /// Writes assembled code into memory at its origin and loads its symbols
 /// and source lines into the debugger. At the * prompt, application
 /// memory starts at &8000.
@@ -357,7 +369,7 @@ func space(_ a: [String: Any]) throws -> (MEMC.DebugSpace, UInt32) {
     }
 }
 
-let allTools: [Tool] = coreTools + debugTools + econetTools
+let allTools: [Tool] = coreTools + debugTools + basicTools + econetTools
 
 let coreTools: [Tool] = [
     Tool(name: "get_status",

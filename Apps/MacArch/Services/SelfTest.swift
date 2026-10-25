@@ -80,6 +80,71 @@ enum SelfTest {
                 report += "after continue: stop=\(machine.debugStop ?? "none") profile frames=\(d.snapshot?.profile?.frames ?? -1) routines=\(d.snapshot?.profile?.routines.count ?? 0) hardware sections=\(d.snapshot?.hardware.count ?? 0)\n"
                 try? report.write(toFile: path + ".debugger.txt", atomically: true, encoding: .utf8)
             }
+            // MACARCH_SELFTEST_BASIC=1: a BASIC program, as if its .bas file
+            // were dropped, stopped at a breakpoint in a PROC, stepped, then
+            // stopped at an error: the debugger's BASIC view each time.
+            if env["MACARCH_SELFTEST_BASIC"] != nil {
+                machine.keyDown(0x0C); try? await Task.sleep(for: .milliseconds(100)); machine.keyUp(0x0C)
+                try? await Task.sleep(for: .seconds(0.5))
+                machine.type("BASIC\n")
+                try? await Task.sleep(for: .seconds(1.5))
+                let file = URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: ".bas"))
+                try? """
+                10 total=0:DIM grid%(2,2)
+                20 FOR I%=1 TO 3
+                30 PROCadd(I%)
+                40 NEXT
+                50 PRINT total/0
+                60 END
+                100 DEF PROCadd(N%)
+                110 LOCAL T,name$
+                120 T=N%*2:name$="Step "+STR$N%
+                130 total=total+T:grid%(N%-1,1)=T
+                140 ENDPROC
+                """.write(to: file, atomically: true, encoding: .utf8)
+                let d = machine.debugger
+                d.addBasicBreakpoint(BasicBreakpoint(line: 130, condition: "N%=2"))
+                d.setBasicErrorStop(.untrapped)
+                d.addBasicWatch("total*10")
+                d.addBasicWatch("grid%(0,1)")
+                d.toggleBasicArray("grid%(")
+                try? await Task.sleep(for: .seconds(0.5))
+                machine.runBASICProgram(file)
+                machine.debuggerRequested = true
+                @MainActor func capture(_ suffix: String) {
+                    if let window = NSApp.windows.first(where: { $0.title.hasPrefix("Debugger") && $0.isVisible }),
+                       let frameView = window.contentView?.superview,
+                       let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) {
+                        frameView.cacheDisplay(in: frameView.bounds, to: rep)
+                        try? rep.representation(using: .png, properties: [:])?
+                            .write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-\(suffix).png")))
+                    }
+                }
+                var report = ""
+                @MainActor func note(_ what: String) {
+                    let b = d.basic
+                    report += "\(what): stop=\(machine.debugStop ?? "none") at=\(b?.stop.map { "\($0)" } ?? "-") frames=\(b?.frames.map { $0.name ?? "main" } ?? []) "
+                        + "locals=\(b?.variables.filter(\.isLocal).map(\.name) ?? []) watches=\(b?.watches.map { (try? $0.result.get()).map { "\($0)" } ?? "error" } ?? []) "
+                        + "error=\(b?.error.map { "\($0.number) \($0.message)" } ?? "-")\n"
+                }
+                try? await Task.sleep(for: .seconds(4))
+                note("breakpoint")
+                capture("basic")
+                d.basicStep(.into)
+                try? await Task.sleep(for: .seconds(1))
+                d.refresh()
+                try? await Task.sleep(for: .seconds(0.5))
+                note("step")
+                capture("basic-step")
+                d.removeAllBasicBreakpoints()
+                d.basicPauseOrContinue()
+                try? await Task.sleep(for: .seconds(3))
+                d.refresh()
+                try? await Task.sleep(for: .seconds(0.5))
+                note("error")
+                capture("basic-error")
+                try? report.write(toFile: path + ".basic.txt", atomically: true, encoding: .utf8)
+            }
             // MACARCH_SELFTEST_MACLAYOUT=1: Mac-layout typing through the view.
             if env["MACARCH_SELFTEST_MACLAYOUT"] != nil,
                let window = NSApp.windows.first(where: { $0.isVisible }),

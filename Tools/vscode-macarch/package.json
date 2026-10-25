@@ -1,7 +1,7 @@
 {
   "name": "macarch-debug",
   "displayName": "MacArch: Acorn Archimedes debugger",
-  "description": "Write ARM assembler and debug it on MacArch's emulated Acorn Archimedes: assemble and run with F5, breakpoints in the source, stepping (and stepping back), registers, memory, disassembly and watchpoints.",
+  "description": "Write ARM assembler or BBC BASIC and debug it on MacArch's emulated Acorn Archimedes: assemble and run with F5, breakpoints in the source (or a BASIC program's lines), stepping (and stepping back), registers, BASIC variables, memory, disassembly and watchpoints.",
   "version": "0.1.0",
   "publisher": "accidentalfish",
   "license": "SEE LICENSE IN README.md",
@@ -16,7 +16,8 @@
   "activationEvents": [
     "onDebugResolve:macarch",
     "onDebugDynamicConfigurations:macarch",
-    "onLanguage:arm-macarch"
+    "onLanguage:arm-macarch",
+    "onLanguage:bbcbasic"
   ],
   "contributes": {
     "languages": [
@@ -31,6 +32,18 @@
           ".arm"
         ],
         "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "bbcbasic",
+        "aliases": [
+          "BBC BASIC",
+          "bbcbasic"
+        ],
+        "extensions": [
+          ".bas",
+          ".bbc"
+        ],
+        "configuration": "./language-configuration-bbcbasic.json"
       }
     ],
     "grammars": [
@@ -38,11 +51,19 @@
         "language": "arm-macarch",
         "scopeName": "source.arm.macarch",
         "path": "./syntaxes/arm.tmLanguage.json"
+      },
+      {
+        "language": "bbcbasic",
+        "scopeName": "source.bbcbasic",
+        "path": "./syntaxes/bbcbasic.tmLanguage.json"
       }
     ],
     "breakpoints": [
       {
         "language": "arm-macarch"
+      },
+      {
+        "language": "bbcbasic"
       }
     ],
     "debuggers": [
@@ -50,7 +71,8 @@
         "type": "macarch",
         "label": "MacArch (Acorn Archimedes)",
         "languages": [
-          "arm-macarch"
+          "arm-macarch",
+          "bbcbasic"
         ],
         "configurationAttributes": {
           "launch": {
@@ -62,6 +84,10 @@
               "program": {
                 "type": "string",
                 "description": "Or an assembled binary, loaded and started the same way."
+              },
+              "basic": {
+                "type": "string",
+                "description": "Or a BBC BASIC program to run: text (.bas, with or without line numbers; lines without are numbered on in tens) or tokenised (as SAVE writes it, which is listed to a file to show). MacArch goes to BASIC's prompt, loads it at PAGE and RUNs it; breakpoints go on its lines."
               },
               "loadAddress": {
                 "type": "number",
@@ -86,7 +112,7 @@
               },
               "stopOnEntry": {
                 "type": "boolean",
-                "description": "Stop at the program's first instruction."
+                "description": "Stop at the program's first instruction (for BASIC, its first statement)."
               },
               "port": {
                 "type": "number",
@@ -121,6 +147,15 @@
           }
         ],
         "configurationSnippets": [
+          {
+            "label": "MacArch: Run a BBC BASIC program",
+            "body": {
+              "type": "macarch",
+              "request": "launch",
+              "name": "Run BASIC on the Archimedes",
+              "basic": "^\"\\${workspaceFolder}/${1:program.bas}\""
+            }
+          },
           {
             "label": "MacArch: Assemble and run an ARM source",
             "body": {

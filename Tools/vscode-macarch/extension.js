@@ -40,7 +40,8 @@ function activate(context) {
     }),
     vscode.debug.registerDebugConfigurationProvider("macarch", {
       resolveDebugConfiguration(folder, config) {
-        // F5 with no launch.json: assemble and run the ARM source in the editor.
+        // F5 with no launch.json: assemble and run the ARM source in the
+        // editor, or run the BASIC program.
         if (!config.type && !config.request) {
           const editor = vscode.window.activeTextEditor;
           if (editor && editor.document.languageId === "arm-macarch") {
@@ -48,10 +49,15 @@ function activate(context) {
             config.request = "launch";
             config.name = "Assemble and run";
             config.source = editor.document.fileName;
+          } else if (editor && editor.document.languageId === "bbcbasic") {
+            config.type = "macarch";
+            config.request = "launch";
+            config.name = "Run BASIC on the Archimedes";
+            config.basic = editor.document.fileName;
           }
         }
-        // Save before assembling.
-        if (config.source) {
+        // Save before assembling (or loading BASIC).
+        if (config.source || config.basic) {
           return vscode.workspace.saveAll(false).then(() => config);
         }
         return config;

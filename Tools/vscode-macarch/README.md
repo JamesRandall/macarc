@@ -46,6 +46,26 @@ so `.label`, `ADDEQS`, `LDMFD R13!, {R0-R3, PC}^`, `SWI "OS_Write0"`,
 `ADR`/`ADRL`, `INCLUDE`, `name EQU value` and comments after `;` or `\`.
 See `Examples/hello-arm`, and the README's Assembler section.
 
+For BBC BASIC, press F5 in a `.bas` file, or:
+
+    {
+      "type": "macarch",
+      "request": "launch",
+      "name": "Run BASIC on the Archimedes",
+      "basic": "${workspaceFolder}/game.bas"
+    }
+
+The program can be text, with or without line numbers (lines without are
+numbered on in tens), or tokenised as SAVE writes it (it's listed to a file
+to show). MacArch goes to BASIC's prompt (F12 and `BASIC` from the desktop),
+loads the program at PAGE and RUNs it. Breakpoints go on its lines, with
+conditions in BASIC (`I%>10`); F10/F11/Shift-F11 step a statement at a time
+over, into and out of PROCs, FNs and GOSUBs; the call stack is the PROC and
+FN calls; the Variables view has BASIC's variables, LOCALs first; the debug
+console and hovers evaluate BASIC expressions. Turn on the BASIC errors
+exception breakpoint to stop where an error happens. `stopOnEntry` stops at
+the first statement. See `Examples/hello-basic`.
+
 In the debug console, expressions use registers, flags, symbols and
 memory: `R0`, `PC+4`, `[R1]` (a byte), `{R13}` (a word), `greeting`,
 `hello.s:20` (the address of a line). Hovering over a label shows its

@@ -471,6 +471,7 @@ final class MachineController {
     func open(_ url: URL) -> Bool {
         switch url.pathExtension.lowercased() {
         case Self.stateExtension: loadState(url)
+        case "bas" where host != nil: runBASICProgram(url)
         default:
             // Before a machine is running, anything dropped is offered as ROMs.
             if host == nil { Task { await ROMLibrary.shared.add([url]) }; return true }
@@ -494,6 +495,33 @@ final class MachineController {
             }
         }
         return true
+    }
+
+    /// A BASIC program file (text or tokenised), dropped or opened: loaded
+    /// at PAGE and RUN, as CHAIN would, if BASIC is at its prompt.
+    func runBASICProgram(_ url: URL) {
+        guard let host else { return }
+        let program: [UInt8]
+        do {
+            program = try BasicDebugger.program(fromFile: [UInt8](Data(contentsOf: url)))
+        } catch {
+            alert("Can’t run \(url.lastPathComponent)", error.localizedDescription)
+            return
+        }
+        let problem: String? = host.sendAndWait { s in
+            do {
+                try s.machine.debugger.basic.loadAtPrompt(program)
+                s.machine.scheduleTyping("RUN\n", intervalMs: 40)
+                return nil
+            } catch {
+                return "\(error)"
+            }
+        }
+        if let problem {
+            alert("Can’t run \(url.lastPathComponent)", problem.prefix(1).uppercased() + problem.dropFirst() + ".")
+        } else if !AppSettings.isSelfTest {
+            NSDocumentController.shared.noteNewRecentDocumentURL(url)
+        }
     }
 
     // MARK: Hard discs

@@ -11,6 +11,12 @@ struct DebugView: Equatable {
     var memoryAddress: UInt32 = 0x8000
     var memoryLength = 512
     var traceCount = 200
+    /// Show the BASIC program (and gather `DebugSnapshot.basic`).
+    var basic = false
+    /// BASIC arrays to show the elements of, by name (e.g. "grid%(").
+    var basicExpanded: Set<String> = []
+    /// BASIC expressions to show the values of.
+    var basicWatches: [String] = []
 }
 
 enum DebugMemorySpace: String, CaseIterable, Identifiable {
@@ -76,12 +82,17 @@ struct DebugSnapshot {
     var profile: Profiler.Report?
     var isProfiling: Bool
     var symbolCount: Int
+    /// A stop in BASIC (rather than in machine code).
+    var isBasicStop: Bool
+    /// The BASIC program, if the view asks for it.
+    var basic: BasicDebugSnapshot?
 
     init(machine m: Machine, view: DebugView) {
         let d = m.debugger
         let c = m.cpu
         self.view = view
         stopReason = d.stopReason.map { "\($0)" }
+        isBasicStop = d.stopReason?.isBasic ?? false
         isRunningCommand = d.isRunningCommand
         ticks = m.ticks
         instructions = c.instructionCount
@@ -118,6 +129,7 @@ struct DebugSnapshot {
         }
         log = Array(d.log.suffix(200))
         symbolCount = d.loadedSymbols.count
+        basic = view.basic ? BasicDebugSnapshot(machine: m, view: view) : nil
     }
 }
 
@@ -175,6 +187,10 @@ final class DebuggerModel {
                 guard let self else { return }
                 if let old = self.snapshot, count != self.lastStopCount, old.view.memorySpace == view.memorySpace, old.view.memoryAddress == view.memoryAddress {
                     self.previousMemory = old.memory
+                }
+                // A BASIC stop shows the program.
+                if count != self.lastStopCount, snap.isBasicStop, !self.view.basic {
+                    self.view.basic = true
                 }
                 self.lastStopCount = count
                 self.snapshot = snap
@@ -260,6 +276,96 @@ final class DebuggerModel {
 
     func clearLog() { command { $0.machine.debugger.clearLog() } }
 
+    // MARK: BASIC
+
+    var basic: BasicDebugSnapshot? { snapshot?.basic }
+
+    /// A line the listing should scroll to (`serial` so the same line
+    /// can be asked for again).
+    struct ScrollRequest: Equatable {
+        var line: Int
+        var serial: Int
+    }
+
+    private(set) var basicScrollRequest: ScrollRequest?
+
+    func showBasicLine(_ line: Int) {
+        basicScrollRequest = ScrollRequest(line: line, serial: (basicScrollRequest?.serial ?? 0) + 1)
+    }
+
+    /// In BASIC, Pause stops at the next statement (so it's somewhere in
+    /// the program).
+    func basicPauseOrContinue() {
+        if isStopped {
+            command { $0.machine.debugger.resume() }
+        } else {
+            command { $0.machine.debugger.begin(basic: .into) }
+        }
+    }
+
+    func basicStep(_ kind: BasicStep) {
+        command { $0.machine.debugger.begin(basic: kind) }
+    }
+
+    /// Adds a breakpoint on the line, or removes the line's.
+    func toggleBasicBreakpoint(line: Int) {
+        command { s in
+            let basic = s.machine.debugger.basic
+            let existing = basic.breakpoints.filter { $0.line == line }
+            if existing.isEmpty {
+                try basic.add(BasicBreakpoint(line: line))
+            } else {
+                for b in existing { basic.remove(id: b.id) }
+            }
+        }
+    }
+
+    func addBasicBreakpoint(_ breakpoint: BasicBreakpoint) {
+        command { try $0.machine.debugger.basic.add(breakpoint) }
+    }
+
+    func updateBasicBreakpoint(_ breakpoint: BasicBreakpoint) {
+        command { try $0.machine.debugger.basic.update(breakpoint) }
+    }
+
+    func removeBasicBreakpoint(id: Int) {
+        command { $0.machine.debugger.basic.remove(id: id) }
+    }
+
+    func removeAllBasicBreakpoints() {
+        command { $0.machine.debugger.basic.removeAllBreakpoints() }
+    }
+
+    func setBasicErrorStop(_ mode: BasicDebugger.ErrorStop) {
+        command { $0.machine.debugger.basic.errorStop = mode }
+    }
+
+    /// Sets a variable (or an array element) to a BASIC expression's value.
+    func setBasicVariable(_ name: String, indices: [Int]? = nil, to expression: String) {
+        command { s in
+            try s.machine.debugger.basic.set(name, indices: indices, to: expression)
+            s.rewinder.keyframe(s.machine)
+        }
+    }
+
+    func toggleBasicArray(_ name: String) {
+        if view.basicExpanded.contains(name) {
+            view.basicExpanded.remove(name)
+        } else {
+            view.basicExpanded.insert(name)
+        }
+    }
+
+    func addBasicWatch(_ expression: String) {
+        let trimmed = expression.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !view.basicWatches.contains(trimmed) else { return }
+        view.basicWatches.append(trimmed)
+    }
+
+    func removeBasicWatch(_ expression: String) {
+        view.basicWatches.removeAll { $0 == expression }
+    }
+
     /// A number (&hex, $hex, 0x, %binary, decimal) or a debugger expression,
     /// evaluated on the emulation thread.
     func address(_ text: String) -> UInt32? {
@@ -280,4 +386,80 @@ final class DebuggerModel {
 struct DebuggerError: Error, CustomStringConvertible {
     let description: String
     init(_ d: String) { description = d }
+}
+
+/// What the debugger window shows of a BASIC program, gathered with the
+/// rest of a `DebugSnapshot`. (After MacBeeb's.)
+struct BasicDebugSnapshot {
+    struct Line: Identifiable {
+        var number: Int
+        var text: String
+        /// The BASIC breakpoints on it.
+        var breakpoints: [BasicBreakpoint]
+        var id: Int { number }
+    }
+
+    struct Element: Identifiable {
+        var indices: [Int]
+        var value: BasicValue
+        var id: [Int] { indices }
+    }
+
+    struct Watch: Identifiable {
+        var expression: String
+        /// The value, or why there isn't one.
+        var result: Result<BasicValue, WatchError>
+        var id: String { expression }
+    }
+
+    struct WatchError: Error {
+        var message: String
+    }
+
+    /// The BASIC found in the ROM, e.g. "BASIC V 1.05".
+    var interpreter: String?
+    var lines: [Line]
+    /// Where it stopped in BASIC, if it did.
+    var stop: BasicLocation?
+    var error: BasicError?
+    /// Innermost first; empty unless stopped in BASIC.
+    var frames: [BasicFrame]
+    var variables: [BasicVariable]
+    /// The elements of the arrays asked for (`DebugView.basicExpanded`),
+    /// by name.
+    var elements: [String: [Element]]
+    var watches: [Watch]
+    var breakpoints: [BasicBreakpoint]
+    var errorStop: BasicDebugger.ErrorStop
+    /// A step (or a pause, waiting for a statement) is under way.
+    var isStepping: Bool
+
+    /// The most array elements gathered for each array.
+    static let elementLimit = 256
+
+    init(machine m: Machine, view: DebugView) {
+        let basic = m.debugger.basic
+        interpreter = basic.interpreter?.name
+        breakpoints = basic.breakpoints
+        let byLine = Dictionary(grouping: basic.breakpoints, by: \.line)
+        lines = interpreter == nil ? [] : basic.listing().map { Line(number: $0.number, text: $0.text, breakpoints: byLine[$0.number] ?? []) }
+        stop = basic.stop
+        error = basic.error
+        frames = basic.callStack()
+        variables = interpreter == nil ? [] : basic.variables()
+        var elements: [String: [Element]] = [:]
+        for variable in variables where variable.dimensions != nil && view.basicExpanded.contains(variable.name) {
+            elements[variable.name] = basic.elements(of: variable, count: Self.elementLimit).map { Element(indices: $0.0, value: $0.1) }
+        }
+        self.elements = elements
+        watches = view.basicWatches.map { expression in
+            do {
+                return Watch(expression: expression, result: .success(try basic.evaluate(expression)))
+            } catch {
+                return Watch(expression: expression, result: .failure(WatchError(message: "\(error)")))
+            }
+        }
+        errorStop = basic.errorStop
+        isStepping = basic.isStepping
+    }
 }
