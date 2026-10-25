@@ -118,7 +118,7 @@ struct WelcomeScreen: View {
     private var gamesCard: some View {
         WelcomeCard(colour: .orange, symbol: "books.vertical", title: "Game Library",
                     blurb: "Your own Archimedes games on a shelf, with their box art: each with its disc, the machine it plays on and how it starts, ready to play with a double-click.") {
-            CoverFan(games: library.personalGames)
+            CoverFan()
         } actions: {
             Button { go { openWindow(id: GameLibraryView.windowID) } } label: {
                 Label(library.personalGames.isEmpty ? "Add Your Games" : "Browse Games", systemImage: "gamecontroller")
@@ -373,71 +373,32 @@ private struct ModelChips: View {
     }
 }
 
-/// Some of My Games' covers fanned out, or empty boxes waiting for some.
+/// Some classic covers, fanned out.
 private struct CoverFan: View {
-    let games: [PersonalGame]
+    static let names = ["lemmings", "elite", "gods", "thechaosengine", "syndicate"]
+    static let images: [NSImage] = names.compactMap { name in
+        Bundle.main.url(forResource: name, withExtension: "jpg", subdirectory: "Covers").flatMap(NSImage.init(contentsOf:))
+    }
 
     var body: some View {
         ZStack {
             LinearGradient(colors: [Color.orange.opacity(0.28), Color.yellow.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)
-            let shown = Array(games.suffix(5))
-            let count = max(shown.count, 3)
             ZStack {
-                ForEach(0..<count, id: \.self) { index in
-                    let middle = Double(count - 1) / 2
+                ForEach(Array(Self.images.enumerated()), id: \.offset) { index, image in
+                    let middle = Double(Self.images.count - 1) / 2
                     let place = Double(index) - middle
-                    Group {
-                        if index < shown.count {
-                            MiniCover(game: shown[index])
-                        } else {
-                            RoundedRectangle(cornerRadius: 5)
-                                .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [5]))
-                                .foregroundStyle(.white.opacity(0.4))
-                                .overlay { Image(systemName: "plus").foregroundStyle(.white.opacity(0.5)) }
-                        }
-                    }
-                    .frame(width: 70, height: 96)
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                    .shadow(color: .black.opacity(0.5), radius: 6, y: 3)
-                    .rotationEffect(.degrees(place * 9), anchor: .bottom)
-                    .offset(x: place * 40, y: abs(place) * 7 + 10)
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 70, height: 96)
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                        .shadow(color: .black.opacity(0.5), radius: 6, y: 3)
+                        .rotationEffect(.degrees(place * 9), anchor: .bottom)
+                        .offset(x: place * 40, y: abs(place) * 7 + 10)
                 }
             }
         }
         .accessibilityHidden(true)
-    }
-}
-
-/// A game's cover, small: its picture, or its title on a plain box.
-private struct MiniCover: View {
-    let game: PersonalGame
-    @State private var image: NSImage?
-
-    var body: some View {
-        Group {
-            if let image {
-                Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
-            } else {
-                ZStack {
-                    LinearGradient(colors: [Color(red: 0.14, green: 0.12, blue: 0.22), Color(red: 0.06, green: 0.05, blue: 0.11)],
-                                   startPoint: .top, endPoint: .bottom)
-                    VStack(spacing: 2) {
-                        ForEach(0..<2) { _ in Rectangle().fill(Color(red: 0.86, green: 0.36, blue: 0.16)).frame(height: 2) }
-                    }
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .padding(.top, 10)
-                    Text(game.title)
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(Color(red: 1, green: 0.85, blue: 0.45))
-                        .padding(5)
-                }
-            }
-        }
-        .task(id: game.coverFile) {
-            guard let url = GameLibrary.shared.myGames.coverURL(game) else { return }
-            image = await Task.detached { NSImage(contentsOf: url) }.value
-        }
     }
 }
 

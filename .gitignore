@@ -24,3 +24,4 @@ Examples/**/*.bin
 *.hdf
 *.macarchstate
 *.zip
+coverart/

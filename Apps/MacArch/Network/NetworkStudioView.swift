@@ -56,6 +56,8 @@ struct NetworkStudioView: View {
     @State private var confirmingPowerOff = false
     /// Follows the Distributed Mandelbrot demo once its view's been shown.
     @State private var mandelbrot = MandelbrotFeed()
+    /// The station holding the mouse, whose release the subtitle explains.
+    @State private var capturing: MachineController?
     @Environment(\.openWindow) private var openWindow
 
     enum Mode: String, CaseIterable {
@@ -94,6 +96,11 @@ struct NetworkStudioView: View {
         }
         .navigationTitle(session.project.name)
         .navigationSubtitle(subtitle)
+        .onReceive(NotificationCenter.default.publisher(for: EmulatorNSView.mouseCaptureChanged)) { n in
+            guard let controller = n.object as? MachineController,
+                  session.controllers.values.contains(where: { $0 === controller }) || capturing === controller else { return }
+            capturing = (n.userInfo?["captured"] as? Bool == true) ? controller : nil
+        }
         .toolbar { toolbar }
         .focusedSceneValue(commandTarget)
         .focusedSceneValue(session)
@@ -130,6 +137,7 @@ struct NetworkStudioView: View {
     }
 
     private var subtitle: String {
+        if capturing != nil { return EmulatorNSView.captureHint }
         let on = session.controllers.count
         let machines = session.project.nodes.filter(\.isMachine).count
         var text = "\(on) of \(machines) on"

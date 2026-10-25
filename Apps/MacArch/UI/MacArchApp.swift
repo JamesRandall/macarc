@@ -68,11 +68,25 @@ struct MacArchApp: App {
                     .disabled(machine?.host == nil)
             }
             CommandGroup(replacing: .pasteboard) {
+                // In a text field (joining a network, settings, names),
+                // the usual editing; at an Archimedes, copy its screen and
+                // paste text into it.
+                Button("Cut") { TextEditing.send(#selector(NSText.cut(_:))) }
+                    .keyboardShortcut("x")
+                Button("Copy") {
+                    if TextEditing.active { TextEditing.send(#selector(NSText.copy(_:))) } else { machine?.copyScreenshot() }
+                }
+                .keyboardShortcut("c")
+                Button("Paste") {
+                    if TextEditing.active { TextEditing.send(#selector(NSText.paste(_:))) } else { machine?.pasteText() }
+                }
+                .keyboardShortcut("v")
+                Button("Select All") { TextEditing.send(#selector(NSText.selectAll(_:))) }
+                    .keyboardShortcut("a")
+                Divider()
                 Button("Copy Screenshot") { machine?.copyScreenshot() }
-                    .keyboardShortcut("c")
                     .disabled(machine?.host == nil)
-                Button("Paste Text") { machine?.pasteText() }
-                    .keyboardShortcut("v")
+                Button("Paste Text into Archimedes") { machine?.pasteText() }
                     .disabled(machine?.host == nil)
             }
             CommandGroup(after: .toolbar) {
@@ -466,5 +480,17 @@ struct ClosesItself: View {
         Color.clear
             .frame(width: 1, height: 1)
             .onAppear { dismiss() }
+    }
+}
+
+/// Standard text editing for the field with the keyboard, when there is one.
+enum TextEditing {
+    static var active: Bool {
+        NSApp.keyWindow?.firstResponder is NSText
+    }
+
+    /// Sends an editing action down the responder chain.
+    static func send(_ action: Selector) {
+        NSApp.sendAction(action, to: nil, from: nil)
     }
 }

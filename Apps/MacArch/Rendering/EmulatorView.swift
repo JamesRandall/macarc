@@ -58,6 +58,10 @@ final class EmulatorNSView: MTKView {
 
     /// Posted (with the controller) by Machine > Capture or Release Mouse.
     static let toggleMouseCapture = Notification.Name("MacArchToggleMouseCapture")
+    /// Posted (with the controller, and "captured" in userInfo) whenever
+    /// the mouse is captured or released, for windows with their own subtitle.
+    static let mouseCaptureChanged = Notification.Name("MacArchMouseCaptureChanged")
+    static let captureHint = "Mouse captured: ⌃⌘M releases it · ⌘-click is Menu (middle button)"
 
     private(set) var mouseCaptured = false
     private var remainder = CGPoint.zero
@@ -70,13 +74,14 @@ final class EmulatorNSView: MTKView {
         if captured {
             NSCursor.hide()
             CGAssociateMouseAndMouseCursorPosition(0)
-            window?.subtitle = "Mouse captured: ⌃⌘M releases it · ⌘-click is Menu (middle button)"
+            window?.subtitle = Self.captureHint
         } else {
             CGAssociateMouseAndMouseCursorPosition(1)
             NSCursor.unhide()
             window?.subtitle = ""
             for b in pressed.keys { release(b) }
         }
+        NotificationCenter.default.post(name: Self.mouseCaptureChanged, object: machine, userInfo: ["captured": captured])
     }
 
     @objc private func toggleMouseCapture(_ n: Notification) {
@@ -242,6 +247,12 @@ final class EmulatorNSView: MTKView {
     /// focused machine's does), and what a click on it does if it doesn't.
     var takesFocus = true
     var onFocus: (() -> Void)?
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        // Leaving the window (a network changing view) gives the mouse back.
+        if newWindow == nil { setMouseCaptured(false) }
+        super.viewWillMove(toWindow: newWindow)
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
