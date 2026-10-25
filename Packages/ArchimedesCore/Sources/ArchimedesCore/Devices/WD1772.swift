@@ -5,8 +5,11 @@ import Foundation
 /// DRQ and INTRQ are wired to IOC FIQ status bits 0 and 1.
 public final class WD1772 {
     public struct Drive {
-        public var disc: FloppyImage?
+        public var disc: FloppyImage? {
+            didSet { if oldValue !== disc { discChanged = true } }
+        }
         public var headTrack = 0
+        var discChanged = false
     }
 
     public enum Command: String, Sendable {
@@ -20,7 +23,22 @@ public final class WD1772 {
         public var description: String { String(format: "%012llu pc=%07X ", tick, pc) + text }
     }
 
-    public var drives = [Drive(), Drive(), Drive(), Drive()]
+    public var drives = [Drive(), Drive(), Drive(), Drive()] {
+        didSet { updateDiscChangedLine() }
+    }
+    /// Original backplane: selected drive's change/empty signal on IOC IRQB4,
+    /// cleared by active-low latch A bit 7 when media is present.
+    var originalDiscChangeWiring = false
+    func updateDiscChangedLine() {
+        guard originalDiscChangeWiring else { return }
+        let changed = selectedDrive.map { drives[$0].disc == nil || drives[$0].discChanged } ?? false
+        ioc.setIRQB(IOC.irqBDiscChanged, changed)
+    }
+    var discChangeState: [Bool] { drives.map { $0.discChanged } }
+    func restoreDiscChangeState(_ state: [Bool]) {
+        for i in 0..<4 { drives[i].discChanged = state[i] }
+        updateDiscChangedLine()
+    }
     public private(set) var selectedDrive: Int? = 0
     public private(set) var side = 0
     public private(set) var doubleDensity = true
@@ -98,6 +116,10 @@ public final class WD1772 {
         let sel = ~v & 0x0F
         selectedDrive = sel == 0 ? nil : sel.trailingZeroBitCount
         side = (v & 0x10) == 0 ? 1 : 0
+        if originalDiscChangeWiring, v & 0x80 == 0, let d = selectedDrive, drives[d].disc != nil {
+            drives[d].discChanged = false
+        }
+        updateDiscChangedLine()
     }
 
     func latchBChanged(_ v: UInt8) {
@@ -113,6 +135,7 @@ public final class WD1772 {
         sectorRegister = 1
         setDRQ(false)
         setINTRQ(false)
+        updateDiscChangedLine()
         typeI = true
     }
 

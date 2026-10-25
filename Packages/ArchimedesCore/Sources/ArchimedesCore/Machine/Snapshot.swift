@@ -50,6 +50,8 @@ public struct SnapshotHeader: Codable, Sendable {
     /// Hard discs are not captured: their paths and write counts are, so a
     /// restore can tell whether the disc has changed since.
     public var hardDiscs: [SnapshotHardDisc]?
+    /// Optional extension: old snapshots had no per-drive change latch model.
+    public var floppyDiscChanged: [Bool]? = nil
 }
 
 public struct SnapshotHardDisc: Codable, Sendable {
@@ -182,9 +184,10 @@ extension Machine {
         let media = fdc.drives.enumerated().compactMap { i, d in
             d.disc.map { SnapshotMedia(drive: i, path: $0.sourcePath, sha256: $0.sha256, format: $0.geometry.formatName) }
         }
-        let header = SnapshotHeader(configuration: configuration, romSHA256: rom.sha256, romVersion: rom.versionString,
+        var header = SnapshotHeader(configuration: configuration, romSHA256: rom.sha256, romVersion: rom.versionString,
                                     guestTicks: ticks, frameCount: vidc.frameCount, media: media, createdBy: createdBy,
                                     hardDiscs: hardDiscRecords)
+        header.floppyDiscChanged = fdc.discChangeState
         let enc = JSONEncoder()
         enc.outputFormatting = [.sortedKeys]
         let json = [UInt8]((try? enc.encode(header)) ?? Data())
@@ -260,6 +263,9 @@ extension Machine {
         if let sio = m.superIO { try b.tag("SIO"); try sio.loadState(&b) }
         try b.tag("END")
         guard b.remaining == 0 else { throw SnapshotError.corrupt("\(b.remaining) trailing bytes") }
+        let changes = header.floppyDiscChanged ?? [Bool](repeating: false, count: 4)
+        guard changes.count == 4 else { throw SnapshotError.corrupt("floppy change latch count") }
+        m.fdc.restoreDiscChangeState(changes)
         m.deviceLog.append("restored snapshot at \(String(format: "%.3f", m.seconds)) s guest time")
         return m
     }

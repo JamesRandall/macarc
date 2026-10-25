@@ -196,6 +196,8 @@ public final class Machine {
         memc.io = ioc
         memc.vidc = vidc
         ioc.fdc = fdc
+        // A3000 and the later 82C711 machines use different change-signal wiring.
+        fdc.originalDiscChangeWiring = model != .a3000 && !model.hasNewIO
         // Hard disc images: the ones passed in, or opened from the configuration.
         var images = [HardDiscImage?](repeating: nil, count: model.hardDiscSlots)
         for i in images.indices {
