@@ -7,8 +7,10 @@ import ArchimedesCore
 /// For checking the app end to end without looking at it.
 @MainActor
 enum SelfTest {
+    private static var started = false
     static func runIfRequested(_ machine: MachineController) {
-        guard let path = ProcessInfo.processInfo.environment["MACARCH_SELFTEST"] else { return }
+        guard !started, let path = ProcessInfo.processInfo.environment["MACARCH_SELFTEST"] else { return }
+        started = true
         if let part = ProcessInfo.processInfo.environment["MACARCH_SELFTEST_INTERNET"] {
             InternetSelfTest.run(path, host: part == "host")
             return
@@ -18,6 +20,7 @@ enum SelfTest {
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(2))
                 NotificationCenter.default.post(name: WelcomeScreen.openRequest, object: nil)
+                if ProcessInfo.processInfo.environment["MACARCH_SELFTEST_WELCOME_IMPORT"] != nil { return }
                 try? await Task.sleep(for: .seconds(4))
                 if let window = NSApp.windows.first(where: { $0.title == WelcomeScreen.title && $0.isVisible }),
                    let frameView = window.contentView?.superview,

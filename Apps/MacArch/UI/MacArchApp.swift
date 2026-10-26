@@ -137,6 +137,8 @@ struct MacArchApp: App {
                 Divider()
             }
             CommandMenu("Machine") {
+                ImportMachineConfigurationButton(machine: machine)
+                Divider()
                 Group {
                 Button(machine?.paused == true || machine?.heldForAgent == true ? "Resume" : "Pause") { machine?.togglePause() }
                     .keyboardShortcut("p")
@@ -168,6 +170,17 @@ struct MacArchApp: App {
                 .disabled(machine?.host == nil)
             }
         }
+
+        WindowGroup("Archimedes", id: MachineConfigurationCommands.windowID, for: UUID.self) { $id in
+            if let id, let machine = MachineController.all[id] {
+                MachineWindow(machine: machine)
+            } else {
+                ClosesItself()
+            }
+        }
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+        .defaultSize(width: 960, height: 760)
 
         WindowGroup("Network", id: NetworkStudioWindow.windowID, for: URL.self) { $url in
             NetworkStudioWindow(url: url)
@@ -260,8 +273,6 @@ struct HardwarePickers: View {
         Button("Configure Machine…") { if let machine { openWindow(id: "configure", value: machine.id) } }
             .keyboardShortcut("c", modifiers: [.command, .option])
         Divider()
-        Button("Import Machine Configuration…") { machine?.chooseImportConfiguration() }
-            .disabled(machine == nil || machine?.isStation == true)
         Button("Export Machine Configuration…") { machine?.chooseExportConfiguration() }
             .disabled(machine?.host == nil || machine?.isStation == true)
         Divider()
@@ -353,7 +364,12 @@ struct HardDiscItems: View {
 
 struct MachineWindow: View {
     static let windowID = "machine"
-    @State private var machine = MachineController()
+    @State private var machine: MachineController
+
+    @MainActor init(machine: MachineController? = nil) {
+        _machine = State(initialValue: machine ?? MachineController())
+    }
+
     @Environment(\.openWindow) private var openWindow
     @Environment(\.controlActiveState) private var active
 

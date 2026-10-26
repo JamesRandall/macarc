@@ -99,12 +99,14 @@ final class MachineController {
     var inspecting = false { didSet { if !inspecting { inspection = nil } } }
     private(set) var inspection: String?
 
-    init() {
+    init(startAutomatically: Bool = true) {
         stationID = nil
         Self.live.add(self)
         Self.all[id] = self
-        if let path = AppSettings.shared.romPath { start(romPath: path) }
-        SelfTest.runIfRequested(self)
+        if startAutomatically {
+            if let path = AppSettings.shared.romPath { start(romPath: path) }
+            SelfTest.runIfRequested(self)
+        }
     }
 
     // MARK: Network stations

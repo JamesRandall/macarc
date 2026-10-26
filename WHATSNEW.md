@@ -1,5 +1,7 @@
 # What's New in MacArch
 
+- **Import from Welcome:** Import Machine… starts a JSON configuration directly from the Archimedes card; the Machine menu import also works before a machine is running.
+
 - **Machine configurations:** import/export JSON from the Machine menu or Configure Machine, with current CMOS, relative paths and validation before restart.
 
 <!--

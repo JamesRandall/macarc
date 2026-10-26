@@ -39,6 +39,10 @@ struct WelcomeScreen: View {
         .background(HomeBackground())
         .preferredColorScheme(.dark)
         .onAppear(perform: arrived)
+        .onAppear {
+            // The check follows the imported window after Welcome is dismissed.
+            Task { await WelcomeImportSelfTest.runIfRequested(openWindow: openWindow, dismissWindow: dismissWindow) }
+        }
         .onOpenURL { url in
             if JoinRequests.isJoinLink(url) {
                 JoinRequests.shared.handle(url)
@@ -103,6 +107,18 @@ struct WelcomeScreen: View {
                     blurb: "An A310, A3000, A440/1 or A5000, with RISC OS 2 or 3 from your own ROMs. Fit hard discs, and step through its ARM in the debugger.") {
             ModelChips()
         } actions: {
+            Button {
+                if MachineConfigurationCommands.chooseAndStart(openWindow: openWindow) {
+                    dismissWindow(id: Self.windowID)
+                }
+            } label: {
+                Label("Import Machine…", systemImage: "square.and.arrow.down")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .help("Import a machine configuration JSON and start that Archimedes")
+            .accessibilityIdentifier("welcome-import-machine")
             Button { openWindow(id: "roms") } label: {
                 Label("Add ROMs…", systemImage: "memorychip")
                     .frame(maxWidth: .infinity)

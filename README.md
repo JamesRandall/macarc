@@ -178,6 +178,8 @@ MacArch is free software under the GNU General Public License, version 3 (see `L
 
 ### Import and export a machine configuration
 
+The welcome screen’s **Import Machine…** button (above Add ROMs…) imports and starts a new machine. **Machine ▸ Import Machine Configuration…** is also available from the welcome screen; with a machine window focused it imports into that machine. Cancel or a failed import leaves the welcome screen and existing sessions unchanged.
+
 Machine ▸ Import Machine Configuration… opens a `MachineConfiguration` JSON file, including ArcLibre's `arclibre.machine.json`. Relative ROM, hard-disc and CMOS paths are resolved beside that JSON. Unsupported settings and missing files are reported before replacing the running machine. Import asks before restarting, copies the ROM into the ROM library and uses a private copy of CMOS, so the original CMOS file is not changed. Imported boot settings stay with this window through resets and hardware changes; reopen the JSON to restore them in a later app session.
 
 Machine ▸ Export Machine Configuration… saves the current hardware/boot configuration plus a uniquely named `.cmos` companion containing current CMOS. Keep both files together. ROMs and hard discs are referenced, not included; paths beside the JSON become relative. The Configure Machine window also has a Configuration menu. Exports describe the running machine, not unapplied setup edits. Use Save State for running programs, RAM and inserted floppy contents. Network stations use their network's configuration instead.
