@@ -1,3 +1,5 @@
+// Host networking (URLSession, Keychain, Dispatch): not part of WebAssembly builds.
+#if !os(WASI)
 import Foundation
 
 /// Which Internet Econet room a network is in, as its file keeps it:
@@ -71,3 +73,4 @@ public final class InternetEconetLink: @unchecked Sendable {
         connection.setClaims(claims)
     }
 }
+#endif

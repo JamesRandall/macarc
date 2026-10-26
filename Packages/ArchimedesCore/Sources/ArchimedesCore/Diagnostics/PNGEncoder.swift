@@ -1,4 +1,6 @@
+#if canImport(Compression)
 import Compression
+#endif
 import Foundation
 
 /// Minimal PNG writer (8-bit RGB) so captures work without UI frameworks.
@@ -47,6 +49,9 @@ public enum PNGEncoder {
     }
 
     static func zlib(_ d: [UInt8]) -> [UInt8] {
+        #if !canImport(Compression)
+        return Zlib.compress(d)
+        #else
         var out = [UInt8](repeating: 0, count: d.count + 1024)
         let n = d.withUnsafeBufferPointer { src in
             out.withUnsafeMutableBufferPointer { dst in
@@ -56,5 +61,6 @@ public enum PNGEncoder {
         var a: UInt32 = 1, b: UInt32 = 0
         for x in d { a = (a + UInt32(x)) % 65521; b = (b + a) % 65521 }
         return [0x78, 0x01] + out.prefix(n) + be32((b << 16) | a)
+        #endif
     }
 }

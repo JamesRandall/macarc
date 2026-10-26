@@ -1,0 +1,20 @@
+{
+  "name": "macarch-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MacArch's ArchimedesCore in the browser, via WebAssembly",
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "scripts": {
+    "build:wasm": "../scripts/build-wasm.sh",
+    "serve": "node serve.mjs",
+    "test": "node --test tests/parity.test.mjs",
+    "test:browser": "node tests/browser-smoke.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.64.1"
+  }
+}

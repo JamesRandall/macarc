@@ -182,7 +182,7 @@ public struct DebugExpression: Sendable, CustomStringConvertible {
             switch op {
             case "!": return v == 0 ? 1 : 0
             case "-": return 0 &- v
-            default: return ~v & 0xFFFF_FFFF
+            default: return Int(truncatingIfNeeded: UInt64(~UInt32(truncatingIfNeeded: v)))
             }
         case .binary(let op, let l, let r):
             if op == "&&" { return try eval(l, c) != 0 && eval(r, c) != 0 ? 1 : 0 }
