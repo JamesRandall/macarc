@@ -1,3 +1,4 @@
+#if canImport(Dispatch)
 import Foundation
 import Synchronization
 
@@ -173,3 +174,27 @@ public final class LockstepWorkers: @unchecked Sendable {
         return groups
     }
 }
+#else
+/// Hosts without threads (WebAssembly/WASI) run every machine on the
+/// caller's thread; the results are the same however many threads.
+public final class LockstepWorkers: @unchecked Sendable {
+    public final class Slot: @unchecked Sendable {
+        let step: (UInt64) -> Void
+        public private(set) var cost = 0.0
+        public init(step: @escaping (UInt64) -> Void) { self.step = step }
+        @inline(__always) public func run(_ ticks: UInt64) { step(ticks) }
+    }
+
+    public init(name: String = "Econet") {}
+    public var count: Int { 0 }
+    public static let maxThreads = 1
+    public func resize(to count: Int) {}
+    public func stop() {}
+
+    public func run(_ groups: [[Slot]], ticks: UInt64) {
+        for group in groups { for slot in group { slot.run(ticks) } }
+    }
+
+    public static func balance(_ slots: [Slot], into count: Int) -> [[Slot]] { [slots] + Array(repeating: [], count: max(0, count - 1)) }
+}
+#endif

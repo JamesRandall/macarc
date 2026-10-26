@@ -1,3 +1,5 @@
+// Host networking (URLSession, Keychain, Dispatch): not part of WebAssembly builds.
+#if !os(WASI)
 import Foundation
 
 /// A room's screens connection: apart from its Econet (its own WebSocket,
@@ -120,3 +122,4 @@ public final class RoomScreens: @unchecked Sendable {
         queue.asyncAfter(deadline: .now() + delay) { self.connect() }
     }
 }
+#endif

@@ -1,11 +1,15 @@
-import Compression
-import zlib
+#if canImport(CryptoKit)
 import CryptoKit
+#endif
 import Foundation
 
 public enum SHA256 {
     public static func hex(_ data: [UInt8]) -> String {
+        #if canImport(CryptoKit)
         CryptoKit.SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        #else
+        PortableSHA256.hash(data).map { String(format: "%02x", $0) }.joined()
+        #endif
     }
 }
 
@@ -23,38 +27,10 @@ public enum Gzip {
     }
 
     /// Fully decompress a gzip file, concatenating all members (RISC OS
-    /// tools often write a JFD as several members). Uses the system zlib.
+    /// tools often write a JFD as several members).
     public static func inflate(_ d: [UInt8], limit: Int = 64 << 20) -> [UInt8]? {
         guard deflateOffset(d) != nil else { return nil }
-        var z = z_stream()
-        guard inflateInit2_(&z, 16 + MAX_WBITS, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else { return nil }
-        defer { inflateEnd(&z) }
-        var out: [UInt8] = []
-        let chunk = 1 << 16
-        var buf = [UInt8](repeating: 0, count: chunk)
-        var input = d
-        return input.withUnsafeMutableBufferPointer { src -> [UInt8]? in
-            z.next_in = src.baseAddress
-            z.avail_in = uInt(src.count)
-            while true {
-                let r: Int32 = buf.withUnsafeMutableBufferPointer { dst in
-                    z.next_out = dst.baseAddress
-                    z.avail_out = uInt(chunk)
-                    return zlib.inflate(&z, Z_NO_FLUSH)
-                }
-                out += buf[0..<(chunk - Int(z.avail_out))]
-                if out.count > limit { return nil }
-                switch r {
-                case Z_STREAM_END:
-                    // Another member follows only if a gzip magic does.
-                    guard z.avail_in >= 2, z.next_in[0] == 0x1F, z.next_in[1] == 0x8B else { return out }
-                    guard inflateReset(&z) == Z_OK else { return out }
-                case Z_OK: continue
-                case Z_BUF_ERROR where z.avail_in == 0: return out // truncated: keep what decoded
-                default: return out.isEmpty ? nil : out
-                }
-            }
-        }
+        return Zlib.gunzip(d, limit: limit)
     }
 
     static func inflateHeaderPeek(_ d: [UInt8]) -> [UInt8]? {

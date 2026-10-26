@@ -1,5 +1,4 @@
 import Foundation
-import zlib
 
 /// Machine snapshots: a complete, versioned capture of emulated state.
 ///
@@ -281,28 +280,11 @@ extension Machine {
         return try? FloppyImage.open(path: p)
     }
 
-    // MARK: Compression helpers (system zlib)
+    // MARK: Compression helpers
 
-    static func crc32(_ b: [UInt8]) -> UInt32 {
-        b.withUnsafeBufferPointer { UInt32(zlib.crc32(0, $0.baseAddress, uInt($0.count))) }
-    }
+    static func crc32(_ b: [UInt8]) -> UInt32 { Zlib.crc32(b) }
 
-    static func deflate(_ b: [UInt8], level: Int32 = 6) -> [UInt8] {
-        var len = compressBound(uLong(b.count))
-        var out = [UInt8](repeating: 0, count: Int(len))
-        let r = out.withUnsafeMutableBufferPointer { dst in
-            b.withUnsafeBufferPointer { src in compress2(dst.baseAddress, &len, src.baseAddress, uLong(b.count), level) }
-        }
-        precondition(r == Z_OK, "zlib compress failed")
-        return Array(out.prefix(Int(len)))
-    }
+    static func deflate(_ b: [UInt8], level: Int32 = 6) -> [UInt8] { Zlib.compress(b, level: level) }
 
-    static func inflate(_ b: [UInt8], size: Int) -> [UInt8]? {
-        var len = uLong(size)
-        var out = [UInt8](repeating: 0, count: max(size, 1))
-        let r = out.withUnsafeMutableBufferPointer { dst in
-            b.withUnsafeBufferPointer { src in uncompress(dst.baseAddress, &len, src.baseAddress, uLong(b.count)) }
-        }
-        return r == Z_OK ? Array(out.prefix(Int(len))) : nil
-    }
+    static func inflate(_ b: [UInt8], size: Int) -> [UInt8]? { Zlib.uncompress(b, size: size) }
 }

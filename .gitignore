@@ -25,3 +25,6 @@ Examples/**/*.bin
 *.macarchstate
 *.zip
 coverart/
+# Web build output: the WASM module and any locally bundled ROMs/discs
+web/public/
+web/tests/out/

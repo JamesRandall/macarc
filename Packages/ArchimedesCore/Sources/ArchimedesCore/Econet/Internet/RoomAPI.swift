@@ -1,3 +1,5 @@
+// Host networking (URLSession, Keychain, Dispatch): not part of WebAssembly builds.
+#if !os(WASI)
 import Foundation
 
 // The service's HTTP API (cloudflare-econet's econet/docs/protocol.md): making,
@@ -215,3 +217,4 @@ public struct RoomAPI: Sendable {
         return components.url!
     }
 }
+#endif

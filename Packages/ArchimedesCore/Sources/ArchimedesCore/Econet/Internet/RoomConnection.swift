@@ -1,3 +1,5 @@
+// Host networking (URLSession, Keychain, Dispatch): not part of WebAssembly builds.
+#if !os(WASI)
 import Foundation
 
 /// A station of this network's, as the room's told of it.
@@ -283,3 +285,4 @@ public final class RoomConnection: @unchecked Sendable {
         onChange?(snapshot)
     }
 }
+#endif

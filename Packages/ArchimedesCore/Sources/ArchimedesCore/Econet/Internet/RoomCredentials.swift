@@ -1,3 +1,5 @@
+// Host networking (URLSession, Keychain, Dispatch): not part of WebAssembly builds.
+#if !os(WASI)
 import Foundation
 import Security
 
@@ -97,3 +99,4 @@ public final class MemoryCredentialStore: RoomCredentialStore, @unchecked Sendab
         _ = lock.withLock { items.removeValue(forKey: key(service, roomId)) }
     }
 }
+#endif
