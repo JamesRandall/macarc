@@ -260,6 +260,11 @@ struct HardwarePickers: View {
         Button("Configure Machine…") { if let machine { openWindow(id: "configure", value: machine.id) } }
             .keyboardShortcut("c", modifiers: [.command, .option])
         Divider()
+        Button("Import Machine Configuration…") { machine?.chooseImportConfiguration() }
+            .disabled(machine == nil || machine?.isStation == true)
+        Button("Export Machine Configuration…") { machine?.chooseExportConfiguration() }
+            .disabled(machine?.host == nil || machine?.isStation == true)
+        Divider()
         Picker("Model", selection: Binding(get: { model }, set: { machine?.setHardware(model: $0) })) {
             ForEach(MachineModel.allCases, id: \.self) { Text($0.displayName).tag($0) }
         }

@@ -99,6 +99,14 @@ struct ConfigureMachineWindow: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
+            Spacer()
+            Menu("Configuration") {
+                Button("Import…") { machine.chooseImportConfiguration() }
+                Button("Export Current Machine…") { machine.chooseExportConfiguration() }
+                    .disabled(machine.host == nil)
+            }
+            .disabled(machine.isStation)
+            .fixedSize()
         }
     }
 

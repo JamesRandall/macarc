@@ -44,6 +44,36 @@ enum SelfTest {
             NSApp.activate(ignoringOtherApps: true)
             NSApp.windows.first { $0.isVisible }?.makeKeyAndOrderFront(nil)
             let env = ProcessInfo.processInfo.environment
+            if let input = env["MACARCH_SELFTEST_MACHINE_CONFIG"] {
+                do {
+                    let source = URL(fileURLWithPath: input)
+                    let expected = try MachineConfigurationFile.load(from: source)
+                    try machine.importConfiguration(from: source, confirmRestart: false)
+                    try await Task.sleep(for: .seconds(1))
+                    let exported = URL(fileURLWithPath: path + ".machine.json")
+                    try await machine.exportConfiguration(to: exported)
+                    let actual = try MachineConfigurationFile.load(from: exported)
+                    guard actual.model == expected.model, actual.cpu == expected.cpu,
+                          actual.ramKB == expected.ramKB, actual.cmosSettings == expected.cmosSettings,
+                          actual.powerOnKeys == expected.powerOnKeys else {
+                        throw MachineError.badConfiguration("Imported/exported settings differ")
+                    }
+                    // Re-import the export into the already-running machine.
+                    try machine.importConfiguration(from: exported, confirmRestart: false)
+                    let prior = machine.host
+                    let bad = URL(fileURLWithPath: path + ".invalid.json")
+                    try Data("{invalid}".utf8).write(to: bad)
+                    var rejected = false
+                    do { try machine.importConfiguration(from: bad, confirmRestart: false) }
+                    catch { rejected = true }
+                    guard rejected, machine.host === prior else { throw MachineError.badConfiguration("Invalid import was accepted or changed the running machine") }
+                    try "PASS: import, export, reimport and failed-import preservation\n".write(toFile: path + ".configuration.txt", atomically: true, encoding: .utf8)
+                } catch {
+                    try? "FAIL: \(error)\n".write(toFile: path + ".configuration.txt", atomically: true, encoding: .utf8)
+                    NSApp.terminate(nil)
+                    return
+                }
+            }
             if let style = env["MACARCH_SELFTEST_STYLE"].flatMap(DisplayStyle.init(rawValue:)) { machine.displayStyle = style }
             // MACARCH_SELFTEST_IMPORT="a|b": add those as ROMs, as a drop on the welcome screen does.
             if let paths = env["MACARCH_SELFTEST_IMPORT"] {

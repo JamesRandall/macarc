@@ -175,3 +175,9 @@ In VS Code, press F5 in a `.bas` file (or launch with `"basic": "program.bas"`):
 
 ## Licensing
 MacArch is free software under the GNU General Public License, version 3 (see `LICENSE`). The Swift code is original. See `docs/reference-audit.md` for how the reference emulators were used. ROMs and disc images are not distributed.
+
+### Import and export a machine configuration
+
+Machine ▸ Import Machine Configuration… opens a `MachineConfiguration` JSON file, including ArcLibre's `arclibre.machine.json`. Relative ROM, hard-disc and CMOS paths are resolved beside that JSON. Unsupported settings and missing files are reported before replacing the running machine. Import asks before restarting, copies the ROM into the ROM library and uses a private copy of CMOS, so the original CMOS file is not changed. Imported boot settings stay with this window through resets and hardware changes; reopen the JSON to restore them in a later app session.
+
+Machine ▸ Export Machine Configuration… saves the current hardware/boot configuration plus a uniquely named `.cmos` companion containing current CMOS. Keep both files together. ROMs and hard discs are referenced, not included; paths beside the JSON become relative. The Configure Machine window also has a Configuration menu. Exports describe the running machine, not unapplied setup edits. Use Save State for running programs, RAM and inserted floppy contents. Network stations use their network's configuration instead.

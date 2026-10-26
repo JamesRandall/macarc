@@ -1,5 +1,7 @@
 # What's New in MacArch
 
+- **Machine configurations:** import/export JSON from the Machine menu or Configure Machine, with current CMOS, relative paths and validation before restart.
+
 <!--
 One section per release, newest first: "## VERSION" (optionally "— DATE"),
 then a line of introduction if wanted, then "- " bullets. Inline Markdown

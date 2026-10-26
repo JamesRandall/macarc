@@ -167,6 +167,9 @@ final class MachineController {
         }
     }
 
+    @ObservationIgnored private var importedConfiguration: MachineConfiguration?
+    @ObservationIgnored private var importedCMOSPath: String?
+
     // MARK: Machine
 
     /// Everything that needs a new machine (a power cycle) to change.
@@ -180,18 +183,20 @@ final class MachineController {
     }
 
     private func configuration(_ hw: Hardware, cmos: String) -> MachineConfiguration {
-        var c = MachineConfiguration(model: hw.model)
+        var c = importedConfiguration ?? MachineConfiguration(model: hw.model)
         c.cpu = hw.cpu
         c.ramKB = hw.ramKB
         c.monitorType = hw.monitor
         c.romPaths = [hw.romPath]
         c.hardDiscs = hw.hardDiscs
-        c.econetStation = owner?.stationNumber(self)
-        c.cmosSettings = owner?.stationCMOSSettings(self) ?? []
+        c.econetStation = owner?.stationNumber(self) ?? importedConfiguration?.econetStation
+        c.cmosSettings = owner?.stationCMOSSettings(self) ?? importedConfiguration?.cmosSettings ?? []
         // First boot, or a CMOS RISC OS never set up (as a 16 MB A540's was
         // when Delete was let go too soon): Delete held resets it to defaults.
         // A Classic always starts from RISC OS's defaults.
-        if session == nil, let d = FileManager.default.contents(atPath: cmos), !Machine.cmosNeverConfigured([UInt8](d)) {
+        if importedConfiguration != nil {
+            c.cmosPath = cmos
+        } else if session == nil, let d = FileManager.default.contents(atPath: cmos), !Machine.cmosNeverConfigured([UInt8](d)) {
             c.cmosPath = cmos
         } else {
             c.powerOnKeys = [0x34]
@@ -209,7 +214,7 @@ final class MachineController {
             alert("A hard disc image is missing", "The machine starts without " + missing.map { ($0 as NSString).lastPathComponent }.joined(separator: ", ") + ". Use Hard Disc > Open to fit it again.")
         }
         let rom = try ROMImage.load(paths: [hw.romPath])
-        let cmos = owner?.stationCMOSPath(self) ?? session?.cmosPath ?? AppSettings.cmosPath(for: rom, model: hw.model)
+        let cmos = owner?.stationCMOSPath(self) ?? session?.cmosPath ?? importedCMOSPath ?? AppSettings.cmosPath(for: rom, model: hw.model)
         return (try Machine(configuration: configuration(hw, cmos: cmos), rom: rom), cmos, hw)
     }
 
@@ -252,6 +257,86 @@ final class MachineController {
             if let p = ProcessInfo.processInfo.environment["MACARCH_LOAD_STATE"] { loadState(URL(fileURLWithPath: p)) }
         } catch {
             startError = "\(error)"
+        }
+    }
+
+
+    // MARK: Portable machine configuration
+
+    func chooseImportConfiguration() {
+        guard !isStation else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]; panel.allowsMultipleSelection = false
+        panel.message = "Choose a machine configuration. Import restarts this machine; ROM and disc paths are resolved relative to the JSON file."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try importConfiguration(from: url, confirmRestart: true) }
+        catch { alert("Could not import machine configuration", "\(error)") }
+    }
+
+    func importConfiguration(from url: URL, confirmRestart: Bool) throws {
+        guard !isStation else { throw MachineError.badConfiguration("Use the network configuration for network stations") }
+        var c = try MachineConfigurationFile.load(from: url)
+        let rom = try ROMImage.load(paths: c.romPaths)
+        // Construct before changing the current session, including opening its discs.
+        _ = try Machine(configuration: c, rom: rom)
+        if confirmRestart && host != nil {
+            let a = NSAlert()
+            a.messageText = "Restart with the imported configuration?"
+            a.informativeText = "\(c.model.displayName), \(c.cpu.displayName), \(c.ramKB) KB. The current running session will be replaced."
+            a.addButton(withTitle: "Import and Restart"); a.addButton(withTitle: "Cancel")
+            guard a.runModal() == .alertFirstButtonReturn else { return }
+            guard confirmDiscChanges(before: "importing a machine configuration") else { return }
+        }
+        syncHardDiscs()
+        // Consolidate chip sets using the existing ROM library importer.
+        let installed = try ROMImporter.install(rom, into: ROMLibrary.directory)
+        c.romPaths = [installed]
+        let profile = URL(fileURLWithPath: AppSettings.supportDirectory).appendingPathComponent("Profiles/Imported-\(UUID().uuidString).cmos")
+        try FileManager.default.createDirectory(at: profile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let source = c.cmosPath { try Data(contentsOf: URL(fileURLWithPath: source)).write(to: profile, options: .atomic) }
+        c.cmosPath = FileManager.default.fileExists(atPath: profile.path) ? profile.path : nil
+        let m = try Machine(configuration: c, rom: rom)
+        // Seed the private profile even when the input has no CMOS sidecar.
+        try Data(m.cmos).write(to: profile, options: .atomic)
+        stopRecordingIfNeeded(); endSession()
+        importedConfiguration = c; importedCMOSPath = profile.path
+        let hw = Hardware(model: c.model, cpu: c.cpu, ramKB: c.ramKB, monitor: c.monitorType, romPath: installed, hardDiscs: c.hardDiscs)
+        AppSettings.shared.addROM(installed)
+        adopt(hw); romVersion = rom.versionString; startError = nil
+        if let host {
+            host.send { s in
+                s.host.saveCMOSIfChanged()
+                s.host.changeProfile(.init(cmosPath: profile.path))
+                s.replace(with: m); m.powerOn()
+                s.host.setPersistCMOS(true, session: s)
+            }
+        } else {
+            start(romPath: installed)
+        }
+    }
+
+    func chooseExportConfiguration() {
+        guard !isStation, host != nil else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "MacArch.machine.json"
+        panel.message = "Save this machine's settings and a companion CMOS file. ROMs and hard discs are referenced, not copied. Use Save State for running programs and floppy contents."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task {
+            do { try await exportConfiguration(to: url) }
+            catch { alert("Could not export machine configuration", "\(error)") }
+        }
+    }
+
+    func exportConfiguration(to url: URL) async throws {
+        guard let host else { throw MachineError.badConfiguration("No running machine to export") }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            host.send { s in
+                do {
+                    try MachineConfigurationFile.save(s.machine.configuration, cmos: s.machine.cmos, to: url)
+                    continuation.resume()
+                } catch { continuation.resume(throwing: error) }
+            }
         }
     }
 
