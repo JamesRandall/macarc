@@ -78,6 +78,7 @@ enum SelfTest {
                 }
             }
             if let style = env["MACARCH_SELFTEST_STYLE"].flatMap(DisplayStyle.init(rawValue:)) { machine.displayStyle = style }
+            if let border = env["MACARCH_SELFTEST_BORDER"].flatMap(DisplayBorder.init(rawValue:)) { machine.displayBorder = border }
             // MACARCH_SELFTEST_IMPORT="a|b": add those as ROMs, as a drop on the welcome screen does.
             if let paths = env["MACARCH_SELFTEST_IMPORT"] {
                 let added = await ROMLibrary.shared.add(paths.split(separator: "|").map { URL(fileURLWithPath: String($0)) })

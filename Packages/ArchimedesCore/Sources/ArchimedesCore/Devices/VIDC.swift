@@ -12,6 +12,17 @@ public struct VideoFrame: Sendable {
     public var scaleY: Int
     public var pixelClockMHz: Int
     public var bitsPerPixel: Int
+    /// Where the display area (the screen memory's pixels) sits in the
+    /// frame, inside the border; nil when there isn't one.
+    public var displayArea: Area?
+
+    /// A rectangle of frame pixels.
+    public struct Area: Sendable, Equatable {
+        public var x, y, width, height: Int
+        public init(x: Int, y: Int, width: Int, height: Int) {
+            self.x = x; self.y = y; self.width = width; self.height = height
+        }
+    }
 
     public static let blank = VideoFrame(width: 640, height: 256, pixels: [UInt32](repeating: 0xFF00_0000, count: 640 * 256),
                                          frameNumber: 0, scaleX: 1, scaleY: 2, pixelClockMHz: 16, bitsPerPixel: 4)
@@ -264,11 +275,20 @@ public final class VIDC {
             let sy = vCycle < 400 ? 2 : 1
             lastFrame = VideoFrame(width: w, height: h, pixels: frameBuffer, frameNumber: frameCount,
                                    scaleX: sx, scaleY: sy, pixelClockMHz: pixelClockMHz, bitsPerPixel: bitsPerPixel)
+            lastFrame.displayArea = displayArea
         } else {
             lastFrame = VideoFrame(width: 1, height: 1, pixels: [0xFF00_0000], frameNumber: frameCount,
                                    scaleX: 1, scaleY: 1, pixelClockMHz: pixelClockMHz, bitsPerPixel: bitsPerPixel)
         }
         frameCompleted?(lastFrame)
+    }
+
+    /// The display area within the frame, clipped to it.
+    var displayArea: VideoFrame.Area? {
+        let x0 = max(hDisplayStart - frameLeft, 0), x1 = min(hDisplayEnd - frameLeft, frameWidth)
+        let y0 = max(vDisplayStart - frameTop, 0), y1 = min(vDisplayEnd - frameTop, frameHeight)
+        guard x1 > x0, y1 > y0 else { return nil }
+        return VideoFrame.Area(x: x0, y: y0, width: x1 - x0, height: y1 - y0)
     }
 
     func renderLine(_ y: Int) {
@@ -473,6 +493,7 @@ extension VIDC {
         let sx = try r.i64(), sy = try r.i64(), clk = try r.i64(), bpp = try r.i64()
         guard px.count == w * h else { throw SnapshotError.corrupt("last frame size") }
         lastFrame = VideoFrame(width: w, height: h, pixels: px, frameNumber: n, scaleX: sx, scaleY: sy, pixelClockMHz: clk, bitsPerPixel: bpp)
+        if w == frameWidth && h == frameHeight { lastFrame.displayArea = displayArea }
         soundBytesOutput = try r.u64(); soundBytesNonSilent = try r.u64(); soundHash = try r.u64()
         // Derived lookup tables.
         for i in 0..<16 { rebuildDisplayColour(i) }

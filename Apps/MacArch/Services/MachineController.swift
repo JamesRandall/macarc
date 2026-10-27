@@ -53,6 +53,9 @@ final class MachineController {
     var displayStyle = DisplayStyle.saved {
         didSet { AppSettings.store.set(displayStyle.rawValue, forKey: DisplayStyle.defaultsKey) }
     }
+    var displayBorder = DisplayBorder.saved {
+        didSet { AppSettings.store.set(displayBorder.rawValue, forKey: DisplayBorder.defaultsKey) }
+    }
     @ObservationIgnored weak var renderer: Renderer?
     @ObservationIgnored private var lightsTimer: Timer?
     /// Keeps App Nap from throttling the emulation in the background.

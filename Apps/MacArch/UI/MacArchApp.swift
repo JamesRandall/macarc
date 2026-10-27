@@ -97,6 +97,13 @@ struct MacArchApp: App {
                     ForEach(DisplayStyle.allCases) { Text($0.name).tag($0) }
                 }
                 .disabled(machine == nil)
+                Picker("Border", selection: Binding(
+                    get: { machine?.displayBorder ?? DisplayBorder.saved },
+                    set: { machine?.displayBorder = $0 }
+                )) {
+                    ForEach(DisplayBorder.allCases) { Text($0.name).tag($0) }
+                }
+                .disabled(machine == nil)
                 Menu("Zoom") {
                     ForEach(MachineController.zoomLevels, id: \.self) { level in
                         Toggle("\(Int(level * 100))%", isOn: Binding(get: { machine?.zoom == level },
@@ -420,7 +427,7 @@ struct MachineScreen: View {
     var body: some View {
         Group {
             if let host = machine.host {
-                EmulatorView(machine: machine, host: host, style: machine.displayStyle,
+                EmulatorView(machine: machine, host: host, style: machine.displayStyle, border: machine.displayBorder,
                              onRenderer: { machine.renderer = $0 }, onZoom: { machine.pictureZoomed($0) })
                     .frame(minWidth: 416, minHeight: 288)
                     .background(.black)

@@ -128,6 +128,10 @@ struct MachineToolbar: CustomizableToolbarContent {
                     ForEach(DisplayStyle.allCases) { Text($0.name).tag($0) }
                 }
                 .pickerStyle(.inline)
+                Picker("Border", selection: Binding(get: { machine.displayBorder }, set: { machine.displayBorder = $0 })) {
+                    ForEach(DisplayBorder.allCases) { Text($0.name).tag($0) }
+                }
+                .pickerStyle(.inline)
             } label: {
                 Label("Display", systemImage: "tv")
             }

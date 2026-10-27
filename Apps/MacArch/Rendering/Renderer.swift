@@ -28,6 +28,45 @@ enum DisplayStyle: String, CaseIterable, Identifiable {
     }
 }
 
+/// How much of the border around the display area the window shows.
+/// Shared by all windows and saved.
+enum DisplayBorder: String, CaseIterable, Identifiable {
+    /// All of it, as VIDC draws it.
+    case full
+    /// A little around the display area.
+    case small
+    /// None: just the display area.
+    case none
+
+    var id: Self { self }
+
+    var name: String {
+        switch self {
+        case .full: "Full Border"
+        case .small: "Small Border"
+        case .none: "No Border"
+        }
+    }
+
+    static let defaultsKey = "MacArchDisplayBorder"
+
+    static var saved: DisplayBorder {
+        AppSettings.store.string(forKey: defaultsKey).flatMap(DisplayBorder.init(rawValue:)) ?? .full
+    }
+
+    /// The part of `f` shown, in frame pixels.
+    func crop(_ f: VideoFrame) -> VideoFrame.Area {
+        let whole = VideoFrame.Area(x: 0, y: 0, width: f.width, height: f.height)
+        guard self != .full, let d = f.displayArea else { return whole }
+        guard self == .small else { return d }
+        // 32 x 16 actual pixels each side.
+        let mx = 32 / max(1, f.scaleX), my = 16 / max(1, f.scaleY)
+        let x0 = max(0, d.x - mx), y0 = max(0, d.y - my)
+        let x1 = min(f.width, d.x + d.width + mx), y1 = min(f.height, d.y + d.height + my)
+        return VideoFrame.Area(x: x0, y: y0, width: x1 - x0, height: y1 - y0)
+    }
+}
+
 /// Draws the machine's frames with Metal, letterboxed to the frame's
 /// display aspect (VIDC frames carry their pixel scale).
 @MainActor
@@ -39,6 +78,11 @@ final class Renderer: NSObject, MTKViewDelegate {
     private let host: EmulatorHost
     private var shownFrame: UInt64 = .max
     var style = DisplayStyle.saved
+    var border = DisplayBorder.saved {
+        didSet { if border != oldValue { shownFrame = .max } }
+    }
+    /// The part of the last frame shown, in frame pixels.
+    private(set) var crop = VideoFrame.Area(x: 0, y: 0, width: 832, height: 576)
 
     /// Display aspect of the last frame shown.
     private(set) var aspect: CGFloat = 4.0 / 3.0
@@ -49,6 +93,9 @@ final class Renderer: NSObject, MTKViewDelegate {
         var style: UInt32
         var viewportHeight: Float
         var lines: Float
+        var top: Float
+        var originX: Float, originY: Float
+        var sizeX: Float, sizeY: Float
     }
 
     init?(device: MTLDevice, pixelFormat: MTLPixelFormat, host: EmulatorHost) {
@@ -89,7 +136,8 @@ final class Renderer: NSObject, MTKViewDelegate {
             d.usage = .shaderRead
             texture = device.makeTexture(descriptor: d)
         }
-        let size = CGSize(width: f.width * max(1, f.scaleX), height: f.height * max(1, f.scaleY))
+        if f.width > 1 { crop = border.crop(f) }
+        let size = CGSize(width: crop.width * max(1, f.scaleX), height: crop.height * max(1, f.scaleY))
         if f.width > 1 {
             actualSize = size
             aspect = size.width / size.height
@@ -110,7 +158,12 @@ final class Renderer: NSObject, MTKViewDelegate {
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentTexture(texture, index: 0)
         let index: UInt32 = switch style { case .sharp: 0; case .smooth: 1; case .crt: 2 }
-        var u = Uniforms(style: index, viewportHeight: Float(height), lines: Float(texture.height))
+        let c = crop.x + crop.width <= texture.width && crop.y + crop.height <= texture.height
+            ? crop : VideoFrame.Area(x: 0, y: 0, width: texture.width, height: texture.height)
+        let tw = Float(texture.width), th = Float(texture.height)
+        var u = Uniforms(style: index, viewportHeight: Float(height), lines: Float(c.height), top: Float(c.y),
+                         originX: Float(c.x) / tw, originY: Float(c.y) / th,
+                         sizeX: Float(c.width) / tw, sizeY: Float(c.height) / th)
         encoder.setFragmentBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
@@ -144,7 +197,10 @@ final class Renderer: NSObject, MTKViewDelegate {
     using namespace metal;
 
     struct VOut { float4 position [[position]]; float2 uv; };
-    struct Uniforms { uint style; float viewportHeight; float lines; };
+    struct Uniforms {
+        uint style; float viewportHeight; float lines; float top;
+        float originX; float originY; float sizeX; float sizeY;
+    };
 
     vertex VOut vertexMain(uint id [[vertex_id]]) {
         float2 c[4] = { float2(-1, -1), float2(1, -1), float2(-1, 1), float2(1, 1) };
@@ -156,9 +212,9 @@ final class Renderer: NSObject, MTKViewDelegate {
 
     // A raster line's colour at x in linear light, with a little horizontal
     // spread like a real spot.
-    float3 rasterLine(texture2d<float> t, float x, float line, float lines) {
+    float3 rasterLine(texture2d<float> t, float x, float line, float lines, float top) {
         constexpr sampler s(filter::linear, address::clamp_to_edge);
-        float y = (clamp(line, 0.0, lines - 1) + 0.5) / lines;
+        float y = (top + clamp(line, 0.0, lines - 1) + 0.5) / t.get_height();
         float dx = 0.6 / t.get_width();
         float3 c = t.sample(s, float2(x, y)).rgb * 0.5 + t.sample(s, float2(x - dx, y)).rgb * 0.25
                  + t.sample(s, float2(x + dx, y)).rgb * 0.25;
@@ -175,8 +231,10 @@ final class Renderer: NSObject, MTKViewDelegate {
                                  constant Uniforms &u [[buffer(0)]]) {
         constexpr sampler nearest(filter::nearest);
         constexpr sampler linear(filter::linear);
-        if (u.style == 0) { return float4(t.sample(nearest, in.uv).rgb, 1); }
-        if (u.style == 1) { return float4(t.sample(linear, in.uv).rgb, 1); }
+        // The shown part of the frame.
+        float2 uv = float2(u.originX, u.originY) + in.uv * float2(u.sizeX, u.sizeY);
+        if (u.style == 0) { return float4(t.sample(nearest, uv).rgb, 1); }
+        if (u.style == 1) { return float4(t.sample(linear, uv).rgb, 1); }
 
         // Scanlines fade out where there are too few pixels per line to show them.
         float perLine = u.viewportHeight / u.lines;
@@ -185,8 +243,8 @@ final class Renderer: NSObject, MTKViewDelegate {
         float line = floor(y);
         float off = y - line - 0.5;
         float other = off < 0 ? line - 1 : line + 1;
-        float3 a = rasterLine(t, in.uv.x, line, u.lines);
-        float3 b = rasterLine(t, in.uv.x, other, u.lines);
+        float3 a = rasterLine(t, uv.x, line, u.lines, u.top);
+        float3 b = rasterLine(t, uv.x, other, u.lines, u.top);
         float3 scanned = (spot(a, off) + spot(b, 1 - abs(off))) * 1.2;
         float3 c = mix(mix(a, b, abs(off) * 0.5), scanned, strength);
         if (perLine >= 3) {

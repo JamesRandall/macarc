@@ -183,7 +183,8 @@ final class EmulatorNSView: MTKView {
         let ox = (bounds.width - size.width) / 2, oy = (bounds.height - size.height) / 2
         let u = (p.x - ox) / size.width, v = (p.y - oy) / size.height
         guard u >= 0, u < 1, v >= 0, v < 1 else { machine.hover(x: -1, y: -1); return }
-        machine.hover(x: Int(u * CGFloat(f.width)), y: Int((isFlipped ? v : 1 - v) * CGFloat(f.height)))
+        let c = renderer?.crop ?? VideoFrame.Area(x: 0, y: 0, width: f.width, height: f.height)
+        machine.hover(x: c.x + Int(u * CGFloat(c.width)), y: c.y + Int((isFlipped ? v : 1 - v) * CGFloat(c.height)))
     }
     override func mouseDragged(with e: NSEvent) { move(e) }
     override func rightMouseDragged(with e: NSEvent) { move(e) }
@@ -298,6 +299,7 @@ struct EmulatorView: NSViewRepresentable {
     let machine: MachineController
     let host: EmulatorHost
     let style: DisplayStyle
+    var border = DisplayBorder.saved
     var onRenderer: (Renderer) -> Void = { _ in }
     var onZoom: (Double) -> Void = { _ in }
     var takesFocus = true
@@ -315,6 +317,7 @@ struct EmulatorView: NSViewRepresentable {
         view.preferredFramesPerSecond = 120
         if let device, let r = Renderer(device: device, pixelFormat: view.colorPixelFormat, host: host) {
             r.style = style
+            r.border = border
             view.renderer = r
             view.delegate = r
             onRenderer(r)
@@ -324,6 +327,7 @@ struct EmulatorView: NSViewRepresentable {
 
     func updateNSView(_ view: EmulatorNSView, context: Context) {
         view.renderer?.style = style
+        view.renderer?.border = border
         view.onFocus = onFocus
         if takesFocus != view.takesFocus {
             view.takesFocus = takesFocus

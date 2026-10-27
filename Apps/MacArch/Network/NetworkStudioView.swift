@@ -484,7 +484,7 @@ struct StationTile: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             if let host = controller.host {
-                EmulatorView(machine: controller, host: host, style: controller.displayStyle,
+                EmulatorView(machine: controller, host: host, style: controller.displayStyle, border: controller.displayBorder,
                              takesFocus: focused, onFocus: { session.focus(node.id) })
                     .background(.black)
             }
