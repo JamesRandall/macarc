@@ -60,6 +60,8 @@ final class EmulatorHost: @unchecked Sendable {
         var savable = false
         /// The image's file name.
         var name: String?
+        /// What its kind of image is called: "adl" for L format, and so on.
+        var fileExtension = "adf"
     }
 
     /// Starts and stops recordings for agents.
@@ -189,8 +191,15 @@ final class EmulatorHost: @unchecked Sendable {
         let l = m.lights, s = m.seconds
         let image = m.fdc.drives[0].disc
         let d = DiscState(modified: image?.isModified ?? false, savable: image?.canSaveAsRawImage ?? false,
-                          name: image.map { ($0.sourcePath as NSString?)?.lastPathComponent ?? "Disc" })
+                          name: image.map { ($0.sourcePath as NSString?)?.lastPathComponent ?? "Disc" },
+                          fileExtension: image.map { Self.fileExtension($0.geometry) } ?? "adf")
         lock.lock(); latestLights = l; latestSeconds = s; latestDisc = d; lock.unlock()
+    }
+
+    /// ADFS L, M and S images (256-byte sectors) are .adl, .adm and .ads.
+    static func fileExtension(_ g: DiscGeometry) -> String {
+        guard g.sectorSize == 256 else { return "adf" }
+        return g.sides == 2 ? "adl" : g.tracks == 40 ? "ads" : "adm"
     }
 
     fileprivate func resyncClock() {

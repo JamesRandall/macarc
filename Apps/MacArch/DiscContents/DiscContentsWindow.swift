@@ -111,7 +111,7 @@ struct DiscContentsWindow: View {
             Text(model.alert ?? "")
         }
         .sheet(item: $editing) { e in
-            FileInfoSheet(entry: e) { name, load, exec, attributes in
+            FileInfoSheet(entry: e, oldDirectories: model.volume?.hasOldDirectories ?? false) { name, load, exec, attributes in
                 model.update(e, name: name, load: load, exec: exec, attributes: attributes, undoManager: undoManager)
             }
         }
@@ -529,6 +529,8 @@ final class FilePromises: NSObject, NSFilePromiseProviderDelegate, @unchecked Se
 /// A file's (or directory's) name, type or addresses, date and access.
 struct FileInfoSheet: View {
     let entry: ADFSVolume.Entry
+    /// An L, M or S disc: ASCII names, and no public access.
+    var oldDirectories = false
     var onSave: (String, UInt32, UInt32, UInt8) -> Void
     @State private var name = ""
     @State private var typed = true
@@ -570,10 +572,12 @@ struct FileInfoSheet: View {
                         Toggle("Write", isOn: $ownerWrite)
                         Text("(you)").foregroundStyle(.secondary)
                     }
-                    HStack {
-                        Toggle("Read", isOn: $publicRead)
-                        Toggle("Write", isOn: $publicWrite)
-                        Text("(others, on a network)").foregroundStyle(.secondary)
+                    if !oldDirectories {
+                        HStack {
+                            Toggle("Read", isOn: $publicRead)
+                            Toggle("Write", isOn: $publicWrite)
+                            Text("(others, on a network)").foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -629,6 +633,7 @@ struct FileInfoSheet: View {
 
     private var problem: String? {
         if !ADFSVolume.isValidName(name) { return "Up to 10 characters, without spaces or $ & @ ^ % \\ : . # * \" |" }
+        if oldDirectories && !name.unicodeScalars.allSatisfy({ $0.isASCII }) { return "Names on this disc are plain ASCII: no accented letters or hard spaces." }
         if addresses == nil {
             return typed ? "A type is a name such as Text or BASIC, or three hex digits (&FFF)." : "Addresses are up to 8 hex digits."
         }

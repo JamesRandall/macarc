@@ -1,12 +1,13 @@
 import Foundation
 
-/// The old free space map, of D format floppies and old-map hard discs:
-/// up to 82 free areas, three-byte start addresses from &000 and lengths
-/// from &100, in 256-byte units, with the list's end (three bytes an entry)
-/// at &1FE. The disc's size is at &FC, its name interleaved at &F7 and
-/// &1F6, its ID at &1FB and its boot option at &1FD; each half ends with a
-/// check byte. The root directory is at &400. Objects are contiguous, and
-/// start on sector boundaries.
+/// The old free space map, of L, M, S and D format floppies and old-map
+/// hard discs: up to 82 free areas, three-byte start addresses from &000
+/// and lengths from &100, in 256-byte units, with the list's end (three
+/// bytes an entry) at &1FE. The disc's size is at &FC, its name interleaved
+/// at &F7 and &1F6, its ID at &1FB and its boot option at &1FD; each half
+/// ends with a check byte. The root directory is at &400 (D format: 2048-
+/// byte directories) or &200 (L, M and S: the old 1280-byte ones). Objects
+/// are contiguous, and start on sector boundaries.
 final class ADFSOldMap: ADFSMapping {
     static let maxFreeEntries = 82
     var map: [UInt8]
@@ -14,17 +15,22 @@ final class ADFSOldMap: ADFSMapping {
     let unit: Int // the sector size in 256-byte units
     let discSize: Int
     let formatName: String
-    let rootAddress: UInt32 = 0x400 >> 8
+    let rootAddress: UInt32
+    let directorySize: Int
     let directorySignature = "Hugo"
     var changed = false
 
     init?(store: ADFSStore) throws {
-        guard store.size >= 0xC00 else { return nil }
+        guard store.size >= 0x700 else { return nil }
         let map = try store.read(0, 0x200)
-        let root = try store.read(0x400, 8)
-        let lRoot = try store.read(0x200, 8)
-        guard Array(root[1...4]) == Array("Hugo".utf8) else {
-            if Array(lRoot[1...4]) == Array("Hugo".utf8) { throw ADFSError.unsupported("ADFS L, M and S format discs") }
+        let hugo = Array("Hugo".utf8)
+        if store.size >= 0xC00, Array(try store.read(0x400, 8)[1...4]) == hugo {
+            rootAddress = 0x400 >> 8
+            directorySize = 2048
+        } else if Array(try store.read(0x200, 8)[1...4]) == hugo {
+            rootAddress = 0x200 >> 8
+            directorySize = 1280
+        } else {
             return nil
         }
         guard ADFSFormatter.checksum(map, 0, 0x100) == map[0xFF], ADFSFormatter.checksum(map, 0x100, 0x100) == map[0x1FF] else {
@@ -44,7 +50,11 @@ final class ADFSOldMap: ADFSMapping {
         self.map = map
         self.free = free.sorted { $0.start < $1.start }
         unit = max(1, store.sectorSize / 256)
-        formatName = store.size <= 1 << 20 ? "ADFS D" : "Old-map hard disc"
+        if directorySize == 1280 {
+            formatName = discSize <= 160 << 10 ? "ADFS S" : discSize <= 320 << 10 ? "ADFS M" : discSize <= 640 << 10 ? "ADFS L" : "Old-map hard disc"
+        } else {
+            formatName = store.size <= 1 << 20 ? "ADFS D" : "Old-map hard disc"
+        }
     }
 
     var freeBytes: Int { free.reduce(0) { $0 + $1.length } * 256 }
@@ -163,6 +173,7 @@ final class ADFSNewMap: ADFSMapping {
     let zoneBits: Int
     let formatName: String
     let directorySignature = "Nick"
+    let directorySize = 2048
     var zones: [[UInt8]]
     var runs: [[Run]]
     var dirty: Set<Int> = []

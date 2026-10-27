@@ -163,6 +163,7 @@ public struct ADFSHostFile: Sendable {
     /// Puts it on the disc in the directory at `path`: a file replacing an
     /// unlocked one of the same name, a folder merging into a directory.
     public func add(to volume: ADFSVolume, at path: [String]) throws {
+        let name = volume.storableName(name)
         if let data {
             try volume.save(data, name: name, at: path, load: load, exec: exec, attributes: attributes)
         } else {
@@ -207,17 +208,36 @@ public enum ADFSFloppyFormatter {
         case e
         /// 800K, old map: what RISC OS 2 reads.
         case d
+        /// 640K, old map and old directories: Arthur's, and the BBC Master's.
+        case l
 
-        public var name: String { self == .e ? "ADFS E (800K, RISC OS 3)" : "ADFS D (800K, RISC OS 2)" }
+        public var name: String {
+            switch self {
+            case .e: return "ADFS E (800K, RISC OS 3)"
+            case .d: return "ADFS D (800K, RISC OS 2)"
+            case .l: return "ADFS L (640K, Arthur and BBC Master)"
+            }
+        }
     }
 
-    /// An 819,200-byte image (2 sides, 80 tracks, 5 sectors of 1024 bytes).
+    /// An 819,200-byte image (2 sides, 80 tracks, 5 sectors of 1024 bytes),
+    /// or for L format 655,360 (2 sides, 80 tracks, 16 sectors of 256).
     public static func blank(_ format: Format, name: String) -> [UInt8] {
-        var d = [UInt8](repeating: 0, count: 819_200)
+        var d = [UInt8](repeating: 0, count: format == .l ? 655_360 : 819_200)
         let discName = Array(ADFSFormatter.discName(name).prefix(10))
         let padded = discName + [UInt8](repeating: 0x20, count: 10 - discName.count)
         let id = ADFSFormatter.discID(for: name)
         func put(_ v: Int, _ n: Int, at o: Int) { for i in 0..<n { d[o + i] = UInt8((v >> (8 * i)) & 0xFF) } }
+        func oldMap(size: Int, free: Int) {
+            put(free, 3, at: 0x000)
+            put(size - free, 3, at: 0x100)
+            put(size, 3, at: 0x0FC)
+            for k in 0..<5 { d[0x0F7 + k] = padded[2 * k]; d[0x1F6 + k] = padded[2 * k + 1] }
+            put(Int(id), 2, at: 0x1FB)
+            d[0x1FE] = 3
+            d[0x0FF] = ADFSFormatter.checksum(d, 0x000, 0x100)
+            d[0x1FF] = ADFSFormatter.checksum(d, 0x100, 0x100)
+        }
         func directory(at o: Int, parent: Int, signature: String) {
             for (i, c) in signature.utf8.enumerated() { d[o + 1 + i] = c; d[o + 2043 + i] = c }
             put(parent, 3, at: o + 2010)
@@ -228,15 +248,19 @@ public enum ADFSFloppyFormatter {
         switch format {
         case .d:
             // The map, the root at &400, free space from &C00.
-            put(0xC00 >> 8, 3, at: 0x000)
-            put(3200 - (0xC00 >> 8), 3, at: 0x100)
-            put(3200, 3, at: 0x0FC)
-            for k in 0..<5 { d[0x0F7 + k] = padded[2 * k]; d[0x1F6 + k] = padded[2 * k + 1] }
-            put(Int(id), 2, at: 0x1FB)
-            d[0x1FE] = 3
-            d[0x0FF] = ADFSFormatter.checksum(d, 0x000, 0x100)
-            d[0x1FF] = ADFSFormatter.checksum(d, 0x100, 0x100)
+            oldMap(size: 3200, free: 0xC00 >> 8)
             directory(at: 0x400, parent: 0x400 >> 8, signature: "Hugo")
+        case .l:
+            // The map, the root at &200 (1280 bytes, its own parent, named
+            // after the disc, as *Format makes it), free space from &700.
+            oldMap(size: 2560, free: 0x700 >> 8)
+            let o = 0x200
+            for (i, c) in "Hugo".utf8.enumerated() { d[o + 1 + i] = c; d[o + 1275 + i] = c }
+            put(0x200 >> 8, 3, at: o + 1238)
+            let root = discName.isEmpty ? [0x24] : discName
+            for (i, c) in root.enumerated() { d[o + 1228 + i] = c; d[o + 1241 + i] = c }
+            if root.count < 10 { d[o + 1228 + root.count] = 0x0D; d[o + 1241 + root.count] = 0x0D }
+            d[o + 1279] = ADFSFormatter.directoryCheckByte(Array(d[o..<(o + 1280)]))
         case .e:
             // One zone at &000 and its copy at &400, the root at &800: all
             // fragment 2 (32 map bits of 128 bytes), then free space.

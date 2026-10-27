@@ -104,19 +104,21 @@ public enum ADFSFormatter {
     }
 
     /// The directory check byte: words and bytes of the used entries and of
-    /// the tail (from the parent pointer, before the closing name),
-    /// accumulated with a 13-bit rotate, then folded to a byte.
+    /// the tail (after its first byte, before the closing name), accumulated
+    /// with a 13-bit rotate, then folded to a byte. A 2048-byte directory's
+    /// tail is its last 41 bytes; an old 1280-byte one's (L format) its last 53.
     static func directoryCheckByte(_ dir: [UInt8]) -> UInt8 {
+        let tail = dir.count == 1280 ? 1227 : 2007
         var acc: UInt32 = 0
         func step(_ v: UInt32) { acc = v ^ ((acc >> 13) | (acc << 19)) }
         func word(_ o: Int) -> UInt32 { UInt32(dir[o]) | UInt32(dir[o + 1]) << 8 | UInt32(dir[o + 2]) << 16 | UInt32(dir[o + 3]) << 24 }
         var entries = 5
-        while entries + 26 <= 2007 && dir[entries] != 0 { entries += 26 }
+        while entries + 26 <= tail && dir[entries] != 0 { entries += 26 }
         var o = 0
         while o < entries & ~3 { step(word(o)); o += 4 }
         while o < entries { step(UInt32(dir[o])); o += 1 }
-        o = 2008
-        while o < 2044 { step(word(o)); o += 4 }
+        o = tail + 1
+        while o < dir.count - 4 { step(word(o)); o += 4 }
         acc ^= acc >> 16
         acc ^= acc >> 8
         return UInt8(acc & 0xFF)

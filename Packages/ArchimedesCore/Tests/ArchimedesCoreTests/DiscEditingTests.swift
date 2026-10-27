@@ -2,11 +2,11 @@ import Foundation
 import XCTest
 @testable import ArchimedesCore
 
-/// Changing the files on ADFS discs (`ADFSVolume`): blank D and E floppies,
+/// Changing the files on ADFS discs (`ADFSVolume`): blank D, E and L floppies,
 /// real E and F discs, old-map hard discs; and RISC OS reading the changes.
 final class DiscEditingTests: XCTestCase {
     static func store(_ format: ADFSFloppyFormatter.Format) -> ADFSMemoryStore {
-        ADFSMemoryStore(bytes: ADFSFloppyFormatter.blank(format, name: "Blank"), sectorSize: 1024)
+        ADFSMemoryStore(bytes: ADFSFloppyFormatter.blank(format, name: "Blank"), sectorSize: format == .l ? 256 : 1024)
     }
 
     static func disc(_ name: String) throws -> ADFSMemoryStore {
@@ -32,11 +32,12 @@ final class DiscEditingTests: XCTestCase {
     func testBlankDiscsAreEmptyAndSound() throws {
         for format in ADFSFloppyFormatter.Format.allCases {
             let v = try ADFSVolume(store: Self.store(format))
-            XCTAssertEqual(v.formatName, format == .e ? "ADFS E" : "ADFS D")
+            XCTAssertEqual(v.formatName, "ADFS " + format.rawValue.uppercased())
             XCTAssertEqual(try v.entries(at: []), [])
             XCTAssertEqual(v.discName, "Blank")
             XCTAssertEqual(try v.check(), [])
-            XCTAssertEqual(v.freeBytes, 819_200 - (format == .e ? 4096 : 0xC00))
+            XCTAssertEqual(v.freeBytes, [.e: 819_200 - 4096, .d: 819_200 - 0xC00, .l: 655_360 - 0x700][format])
+            XCTAssertEqual(v.hasOldDirectories, format == .l)
         }
         // The reader the game library uses agrees.
         XCTAssertEqual(try ADFSDiscReader.read(bytes: ADFSFloppyFormatter.blank(.e, name: "X")).items.count, 0)
@@ -65,15 +66,16 @@ final class DiscEditingTests: XCTestCase {
             XCTAssertEqual(try v.contents(of: "Big", at: ["!App"]), big)
             XCTAssertEqual(try v.entry("Big", at: ["!App"]).fileType, nil, "untyped")
             XCTAssertEqual(try v.contents(of: "Tiny", at: ["!App", "Deep"]), [1, 2, 3])
-            XCTAssertEqual(try ADFSDiscReader.read(bytes: store.bytes).items.count, 4, "the game library's reader sees them")
+            if format != .l { XCTAssertEqual(try ADFSDiscReader.read(bytes: store.bytes).items.count, 4, "the game library's reader sees them") }
 
             try ADFSVolume.edit(store) { v in
                 try v.rename("Deep", at: ["!App"], to: "Deeper")
                 try v.rename("ReadMe", at: [], to: "Notes")
-                try v.setInfo("Notes", at: [], attributes: 0x07)
+                try v.setInfo("Notes", at: [], attributes: 0x37)
             }
             v = try ADFSVolume(store: store)
             XCTAssertEqual(try v.check(), [])
+            XCTAssertEqual(try v.entry("Notes", at: []).access, format == .l ? "LWR/" : "LWR/wr", "old directories keep no public access")
             XCTAssertEqual(try v.contents(of: "Tiny", at: ["!App", "Deeper"]), [1, 2, 3])
             XCTAssertEqual(try v.title(at: ["!App", "Deeper"]), "Deeper")
             XCTAssertTrue(try v.entry("Notes", at: []).isLocked)
@@ -108,6 +110,61 @@ final class DiscEditingTests: XCTestCase {
             }) { XCTAssertEqual($0 as? ADFSError, .directoryFull("$")) }
             XCTAssertEqual(store.bytes, before)
         }
+    }
+
+    /// L format's old directories: access in the names' top bits, as RISC
+    /// OS writes them, ASCII names only, and 47 entries.
+    func testOldDirectories() throws {
+        let store = Self.store(.l)
+        try ADFSVolume.edit(store) { v in
+            try v.makeDirectory("Sub", at: [])
+            try v.save([1, 2], name: "Top", at: [], load: 0x8000, exec: 0x8000, attributes: 0x07)
+        }
+        // As RISC OS 3.11's *CDir and *Save left them: "Sub" with D in the
+        // fourth byte's top bit (its terminator), "Top" with R, W and L.
+        let root = Array(store.bytes[0x200..<0x700])
+        XCTAssertEqual(Array(root[5..<9]), [0x53, 0x75, 0x62, 0x8D])
+        XCTAssertEqual(Array(root[31..<35]), [0xD4, 0xEF, 0xF0, 0x0D])
+        XCTAssertEqual(root[30], root[0], "an entry's sequence number is the directory's when it changed")
+        XCTAssertEqual(Array(store.bytes[0x200 + 1228..<0x200 + 1234]), Array("Blank\r".utf8), "the root is named after the disc")
+        var v = try ADFSVolume(store: store)
+        XCTAssertEqual(try v.check(), [])
+        XCTAssertEqual(try v.entries(at: []).map(\.name), ["Sub", "Top"])
+        XCTAssertEqual(try v.entry("Top", at: []).access, "LWR/")
+        XCTAssertEqual(try v.entry("Sub", at: []).length, 1280)
+        XCTAssertEqual(try v.title(at: ["Sub"]), "Sub")
+
+        XCTAssertThrowsError(try ADFSVolume.edit(store) { try $0.save([1], name: "Caf\u{E9}", at: [], load: 0, exec: 0) }) {
+            XCTAssertEqual($0 as? ADFSError, .badName("Caf\u{E9}"))
+        }
+        try ADFSVolume.edit(store) { v in
+            try ADFSHostFile(name: "My\u{A0}Notes", load: 0, exec: 0, attributes: 0x03, data: [7], children: []).add(to: v, at: ["Sub"])
+        }
+        v = try ADFSVolume(store: store)
+        XCTAssertEqual(try v.contents(of: "My_Notes", at: ["Sub"]), [7], "a Mac space comes in as _")
+
+        XCTAssertThrowsError(try ADFSVolume.edit(store) { v in
+            for i in 0..<47 { try v.save([1], name: "F\(i)", at: ["Sub"], load: 0, exec: 0) }
+        }) { XCTAssertEqual($0 as? ADFSError, .directoryFull("$.Sub")) }
+        try ADFSVolume.edit(store) { v in
+            for i in 0..<46 { try v.save([UInt8(i)], name: "F\(i)", at: ["Sub"], load: 0, exec: 0) }
+        }
+        v = try ADFSVolume(store: store)
+        XCTAssertEqual(try v.entries(at: ["Sub"]).count, 47)
+        XCTAssertEqual(try v.contents(of: "F45", at: ["Sub"]), [45])
+        XCTAssertEqual(try v.check(), [])
+    }
+
+    /// ADFS numbers an L disc's sectors through side 0, then side 1; D, E
+    /// and F alternate sides track by track.
+    func testFloppySectorOrder() throws {
+        let l = FloppyImage.blank(.l, name: "L"), e = FloppyImage.blank(.e, name: "E")
+        try ADFSFloppyStore(image: l).write(16 * 256, [0xAB])
+        XCTAssertEqual(l.readSector(side: 0, track: 1, sectorID: 0)?.first, 0xAB)
+        try ADFSFloppyStore(image: l).write(80 * 16 * 256, [0xCD])
+        XCTAssertEqual(l.readSector(side: 1, track: 0, sectorID: 0)?.first, 0xCD)
+        try ADFSFloppyStore(image: e).write(5 * 1024, [0xEF])
+        XCTAssertEqual(e.readSector(side: 1, track: 0, sectorID: 0)?.first, 0xEF)
     }
 
     func testFillingAndFreeingFragmentsTheNewMap() throws {
@@ -321,7 +378,8 @@ final class DiscEditingTests: XCTestCase {
     /// been looked at), and what it writes afterwards leaves a disc this
     /// can still read and change.
     func testRISCOSSeesChangesAndWritesSoundly() throws {
-        for (format, rom, model) in [(ADFSFloppyFormatter.Format.e, "riscos3_11", MachineModel.a3000), (.d, "riscos2_00", .a310)] {
+        for (format, rom, model) in [(ADFSFloppyFormatter.Format.e, "riscos3_11", MachineModel.a3000), (.d, "riscos2_00", .a310),
+                                     (.l, "riscos3_11", .a3000), (.l, "riscos2_00", .a310)] {
             guard let dir = GameSmokeTests.romDir(rom) else { throw XCTSkip("\(rom) ROM not present") }
             let image = FloppyImage(data: ADFSFloppyFormatter.blank(format, name: "Test"), geometry: MediaDetector.detect(ADFSFloppyFormatter.blank(format, name: "Test")).geometry!)
             var c = MachineConfiguration(model: model)

@@ -488,7 +488,7 @@ final class MachineController {
 
     // MARK: Discs
 
-    static let discTypes: [UTType] = ["adf", "adl", "jfd", "hfe"].compactMap { UTType(filenameExtension: $0) }
+    static let discTypes: [UTType] = ["adf", "adl", "adm", "ads", "jfd", "hfe"].compactMap { UTType(filenameExtension: $0) }
 
     func openDisc() {
         let panel = NSOpenPanel()
@@ -574,9 +574,10 @@ final class MachineController {
     @discardableResult
     func saveDiscAs() -> Bool {
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "adf") ?? .data]
-        panel.nameFieldStringValue = discIsUntitled ? "Untitled.adf" : discName.map { ($0 as NSString).deletingPathExtension + " copy.adf" } ?? "Disc.adf"
-        panel.message = "Save the disc, with its changes, as a new ADF image. The machine then uses the new file."
+        let ext = disc.fileExtension
+        panel.allowedContentTypes = [UTType(filenameExtension: ext) ?? .data]
+        panel.nameFieldStringValue = (discIsUntitled ? "Untitled" : discName.map { ($0 as NSString).deletingPathExtension + " copy" } ?? "Disc") + "." + ext
+        panel.message = "Save the disc, with its changes, as a new \(ext.uppercased()) image. The machine then uses the new file."
         guard panel.runModal() == .OK, let url = panel.url else { return false }
         return saveDisc(to: url)
     }

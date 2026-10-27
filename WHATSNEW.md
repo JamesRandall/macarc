@@ -1,6 +1,6 @@
 # What's New in MacArch
 
-- **Disc contents:** File ▸ Show Disc Contents (⇧⌘I) lists the files on a floppy (ADFS D, E or F) or a hard disc, as MacBeeb's does. Drag files out to Finder, named with their RISC OS types (`ReadMe,fff`), or drag Mac files and folders in. Rename, retype, relock and delete files, make directories, and set the disc's name and boot option, all with undo. RISC OS sees a floppy's changes straight away; a hard disc's restart the machine. File ▸ New Disc puts in a blank one.
+- **Disc contents:** File ▸ Show Disc Contents (⇧⌘I) lists the files on a floppy (ADFS L, M, S, D, E or F) or a hard disc, as MacBeeb's does. Drag files out to Finder, named with their RISC OS types (`ReadMe,fff`), or drag Mac files and folders in. Rename, retype, relock and delete files, make directories, and set the disc's name and boot option, all with undo. RISC OS sees a floppy's changes straight away; a hard disc's restart the machine. File ▸ New Disc puts in a blank one.
 
 - **View ▸ Border:** show the full border around the desktop, a little of it, or none.
 

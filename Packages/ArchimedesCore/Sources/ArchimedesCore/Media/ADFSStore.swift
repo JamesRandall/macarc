@@ -46,9 +46,12 @@ public final class ADFSFloppyStore: ADFSStore {
         g = image.geometry
     }
 
-    /// Logical sector `n`'s place: sides alternate within each track.
+    /// Logical sector `n`'s place. D, E and F formats alternate sides track
+    /// by track; L format (256-byte sectors) has all of side 0, then side 1,
+    /// as RISC OS's *Format and *Save lay it out.
     func place(_ n: Int) -> (side: Int, track: Int, id: Int) {
         let s = n % g.sectorsPerTrack, t = n / g.sectorsPerTrack
+        if g.sectorSize == 256 { return (t / g.tracks, t % g.tracks, g.firstSectorID + s) }
         return (t % g.sides, t / g.sides, g.firstSectorID + s)
     }
 
