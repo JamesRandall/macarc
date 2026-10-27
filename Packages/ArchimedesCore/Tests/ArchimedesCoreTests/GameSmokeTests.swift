@@ -148,7 +148,8 @@ final class GameSmokeTests: XCTestCase {
         return FileManager.default.fileExists(atPath: p) ? p : nil
     }
 
-    func script(_ name: String, disc: String, rom profile: String = "riscos3_11", model: MachineModel = .a3000) throws -> Script {
+    func script(_ name: String, disc: String, rom profile: String = "riscos3_11", model: MachineModel = .a3000,
+                edit: ((FloppyImage) throws -> Void)? = nil) throws -> Script {
         guard ProcessInfo.processInfo.environment["MACARCH_GAME_TESTS"] != nil else {
             throw XCTSkip("set MACARCH_GAME_TESTS=1 to run the game smoke tests")
         }
@@ -160,6 +161,7 @@ final class GameSmokeTests: XCTestCase {
         c.powerOnKeys = [0x34]
         let m = try Machine(configuration: c)
         let image = try FloppyImage.open(path: discPath)
+        try edit?(image)
         m.insertFloppy(image)
         m.powerOn()
         let s = Script(m, name: name)
@@ -303,10 +305,21 @@ final class GameSmokeTests: XCTestCase {
 
     func testHoledOutOnA5000() throws { try runHoledOut(rom: "riscos3_11", model: .a5000) }
 
-    func runHoledOut(rom: String, model: MachineModel = .a3000) throws {
+    /// Changed from the Mac first (its root directory and map rewritten),
+    /// the copy protected disc still plays.
+    func testHoledOutAfterDiscEditing() throws {
+        try runHoledOut(rom: "riscos3_11", name: "holedout-edited") { image in
+            try ADFSVolume.edit(ADFSFloppyStore(image: image)) { v in
+                let e = try v.entries(at: []).first { !$0.isDirectory }!
+                try v.setInfo(e.name, at: [], attributes: e.attributes | 0x10)
+            }
+        }
+    }
+
+    func runHoledOut(rom: String, model: MachineModel = .a3000, name: String? = nil, edit: ((FloppyImage) throws -> Void)? = nil) throws {
         let disc = "Holed Out!! (1989) (The Fourth Dimension) F1019900/Discs/Holed Out!! (1989) (The Fourth Dimension) F1019901.jfd"
-        let s = try script("holedout" + (rom == "riscos3_11" ? "" : "-" + rom) + (model == .a3000 ? "" : "-" + model.rawValue.lowercased()),
-                           disc: disc, rom: rom, model: model)
+        let s = try script(name ?? "holedout" + (rom == "riscos3_11" ? "" : "-" + rom) + (model == .a3000 ? "" : "-" + model.rawValue.lowercased()),
+                           disc: disc, rom: rom, model: model, edit: edit)
         let m = s.m
         s.press("f12")
         s.type("/adfs::0.$.!BOOT\n")

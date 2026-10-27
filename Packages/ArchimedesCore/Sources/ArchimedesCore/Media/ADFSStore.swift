@@ -9,21 +9,34 @@ public protocol ADFSStore: AnyObject {
     var sectorSize: Int { get }
     func read(_ address: Int, _ count: Int) throws -> [UInt8]
     func write(_ address: Int, _ bytes: [UInt8]) throws
+    /// Byte ranges new objects keep clear of, even where the map says
+    /// they're free: a copy protected floppy's odd tracks (all of each, as
+    /// its protection may check the ordinary sectors on them too), or those
+    /// an image is short of.
+    func unusableAreas() -> [Range<Int>]
 }
 
-/// A disc held in memory, such as a whole floppy image.
+/// A disc held in memory, such as a whole floppy image (with the parts
+/// that couldn't be read from it, which stay unreadable here).
 public final class ADFSMemoryStore: ADFSStore {
     public private(set) var bytes: [UInt8]
     public let sectorSize: Int
+    public let unreadable: [Range<Int>]
     public var size: Int { bytes.count }
 
-    public init(bytes: [UInt8], sectorSize: Int = 1024) {
+    public init(bytes: [UInt8], sectorSize: Int = 1024, unreadable: [Range<Int>] = []) {
         self.bytes = bytes
         self.sectorSize = sectorSize
+        self.unreadable = unreadable
     }
+
+    public func unusableAreas() -> [Range<Int>] { unreadable }
 
     public func read(_ address: Int, _ count: Int) throws -> [UInt8] {
         guard address >= 0, count >= 0, address + count <= bytes.count else { throw ADFSError.damaged("an address lies beyond the disc") }
+        guard !unreadable.contains(where: { $0.overlaps(address..<(address + count)) }) else {
+            throw ADFSError.unreadable("part of it is on sectors that aren't standard ADFS ones (the disc may be copy protected)")
+        }
         return Array(bytes[address..<(address + count)])
     }
 
@@ -55,12 +68,47 @@ public final class ADFSFloppyStore: ADFSStore {
         return (t % g.sides, t / g.sides, g.firstSectorID + s)
     }
 
+    /// Whether logical sector `n` is an ordinary one: there, once on its
+    /// track, the right size, and without CRC errors.
+    func isStandard(_ n: Int) -> Bool {
+        let p = place(n)
+        let matches = image.layout(side: p.side, track: p.track).filter { Int($0.id) == p.id }
+        guard matches.count == 1, let h = matches.first else { return false }
+        return h.size == g.sectorSize && !h.idCRCError && !h.dataCRCError && Int(h.cylinder) == p.track
+    }
+
     func sector(_ n: Int) throws -> [UInt8] {
         let p = place(n)
-        guard let data = image.readSector(side: p.side, track: p.track, sectorID: p.id), data.count == g.sectorSize else {
+        guard isStandard(n), let data = image.readSector(side: p.side, track: p.track, sectorID: p.id), data.count == g.sectorSize else {
             throw ADFSError.unreadable("track \(p.track), side \(p.side), sector \(p.id) isn't a standard sector (the disc may be copy protected)")
         }
         return data
+    }
+
+    /// Whether logical track `t` is just the ordinary sectors, once each.
+    func isStandardTrack(_ t: Int) -> Bool {
+        let first = t * g.sectorsPerTrack, p = place(first)
+        return image.layout(side: p.side, track: p.track).count == g.sectorsPerTrack
+            && (first..<(first + g.sectorsPerTrack)).allSatisfy(isStandard)
+    }
+
+    public func unusableAreas() -> [Range<Int>] {
+        let track = g.sectorsPerTrack * g.sectorSize
+        return Self.merged((0..<(size / track)).filter { !isStandardTrack($0) }.map { ($0 * track)..<(($0 + 1) * track) })
+    }
+
+    /// The sectors that can't be read: fewer than `unusableAreas`, as odd
+    /// tracks can hold ordinary sectors too.
+    public func unreadableAreas() -> [Range<Int>] {
+        Self.merged((0..<(size / g.sectorSize)).filter { !isStandard($0) }.map { ($0 * g.sectorSize)..<(($0 + 1) * g.sectorSize) })
+    }
+
+    static func merged(_ ranges: [Range<Int>]) -> [Range<Int>] {
+        var out: [Range<Int>] = []
+        for r in ranges {
+            if let last = out.last, last.upperBound == r.lowerBound { out[out.count - 1] = last.lowerBound..<r.upperBound } else { out.append(r) }
+        }
+        return out
     }
 
     public func read(_ address: Int, _ count: Int) throws -> [UInt8] {
@@ -111,6 +159,8 @@ public final class ADFSFileStore: ADFSStore {
 
     deinit { close(fd) }
 
+    public func unusableAreas() -> [Range<Int>] { [] }
+
     public func read(_ address: Int, _ count: Int) throws -> [UInt8] {
         guard address >= 0, count >= 0, address + count <= size else { throw ADFSError.damaged("an address lies beyond the disc") }
         var b = [UInt8](repeating: 0, count: count)
@@ -137,6 +187,8 @@ public final class ADFSBufferedStore: ADFSStore {
     public var sectorSize: Int { base.sectorSize }
 
     public init(_ base: ADFSStore) { self.base = base }
+
+    public func unusableAreas() -> [Range<Int>] { base.unusableAreas() }
 
     public func read(_ address: Int, _ count: Int) throws -> [UInt8] {
         var out = try base.read(address, count)

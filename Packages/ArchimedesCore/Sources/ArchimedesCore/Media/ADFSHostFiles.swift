@@ -187,17 +187,27 @@ public enum ADFSExport {
 
     /// Writes the entry `e` (a file, or a directory and everything in it)
     /// from the directory at `path` to `url`, dated as it is on the disc.
-    public static func write(_ e: ADFSVolume.Entry, from volume: ADFSVolume, at path: [String], to url: URL) throws {
+    ///
+    /// Inside a directory, files that can't be read (on a copy protected
+    /// disc's odd sectors) are left out, and their paths returned.
+    @discardableResult
+    public static func write(_ e: ADFSVolume.Entry, from volume: ADFSVolume, at path: [String], to url: URL) throws -> [String] {
         let fm = FileManager.default
+        var skipped: [String] = []
         if e.isDirectory {
             try fm.createDirectory(at: url, withIntermediateDirectories: true)
             for child in try volume.entries(at: path + [e.name]) {
-                try write(child, from: volume, at: path + [e.name], to: url.appendingPathComponent(macName(child)))
+                do {
+                    skipped += try write(child, from: volume, at: path + [e.name], to: url.appendingPathComponent(macName(child)))
+                } catch ADFSError.unreadable {
+                    skipped.append((["$"] + path + [e.name, child.name]).joined(separator: "."))
+                }
             }
         } else {
             try Data(volume.contents(of: e.name, at: path)).write(to: url)
         }
         if let date = e.date { try? fm.setAttributes([.modificationDate: date], ofItemAtPath: url.path) }
+        return skipped
     }
 }
 

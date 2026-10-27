@@ -105,8 +105,8 @@ struct DiscContentsWindow: View {
         .onChange(of: nameFocused) {
             if !nameFocused { commitName() }
         }
-        .alert("The disc can’t be changed", isPresented: Binding(get: { model.alert != nil }, set: { if !$0 { model.alert = nil } })) {
-            Button("OK") { model.alert = nil }
+        .alert(model.alertTitle, isPresented: Binding(get: { model.alert != nil }, set: { if !$0 { model.alert = nil; model.alertTitle = DiscContentsModel.cantChange } })) {
+            Button("OK") { model.alert = nil; model.alertTitle = DiscContentsModel.cantChange }
         } message: {
             Text(model.alert ?? "")
         }
@@ -443,7 +443,9 @@ struct DiscFileTable: NSViewRepresentable {
             guard row < shown.count, let source = model.source else { return nil }
             let e = shown[row]
             let provider = NSFilePromiseProvider(fileType: (e.isDirectory ? UTType.folder : UTType.data).identifier, delegate: FilePromises.shared)
-            provider.userInfo = FilePromises.Promise(entry: e, source: source, path: model.path)
+            provider.userInfo = FilePromises.Promise(entry: e, source: source, path: model.path) { [weak model] skipped in
+                model?.showSkipped(skipped)
+            }
             return provider
         }
 
@@ -503,6 +505,8 @@ final class FilePromises: NSObject, NSFilePromiseProviderDelegate, @unchecked Se
         var entry: ADFSVolume.Entry
         var source: DiscContentsModel.ExportSource
         var path: [String]
+        /// Told of files left out (unreadable, on a copy protected disc).
+        var skipped: @MainActor ([String]) -> Void
     }
 
     func filePromiseProvider(_ provider: NSFilePromiseProvider, fileNameForType fileType: String) -> String {
@@ -516,7 +520,8 @@ final class FilePromises: NSObject, NSFilePromiseProviderDelegate, @unchecked Se
             return
         }
         do {
-            try ADFSExport.write(promise.entry, from: promise.source.volume(), at: promise.path, to: url)
+            let skipped = try ADFSExport.write(promise.entry, from: promise.source.volume(), at: promise.path, to: url)
+            if !skipped.isEmpty { Task { @MainActor in promise.skipped(skipped) } }
             completionHandler(nil)
         } catch {
             completionHandler(error)

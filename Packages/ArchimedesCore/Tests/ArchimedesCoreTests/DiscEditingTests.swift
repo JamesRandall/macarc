@@ -167,6 +167,106 @@ final class DiscEditingTests: XCTestCase {
         XCTAssertEqual(e.readSector(side: 1, track: 0, sectorID: 0)?.first, 0xEF)
     }
 
+    /// An image short of its second half (as some protected discs are):
+    /// what's there reads, and new files go only where sectors are.
+    func testShortDiscsOnlyUseWhatsThere() throws {
+        for format in [ADFSFloppyFormatter.Format.e, .d] {
+            let bytes = ADFSFloppyFormatter.blank(format, name: "Short")
+            let image = FloppyImage(data: Array(bytes.prefix(400 << 10)), geometry: MediaDetector.detect(bytes).geometry!)
+            let store = ADFSFloppyStore(image: image)
+            XCTAssertEqual(store.unusableAreas(), [(400 << 10)..<819_200], "\(format)")
+            let data = (0..<300_000).map { UInt8(truncatingIfNeeded: $0 &* 7) }
+            try ADFSVolume.edit(store) { try $0.save(data, name: "Big", at: [], load: 0, exec: 0) }
+            let v = try ADFSVolume(store: store)
+            XCTAssertEqual(try v.contents(of: "Big", at: []), data)
+            XCTAssertEqual(try v.check(), [])
+            XCTAssertThrowsError(try ADFSVolume.edit(store) { try $0.save([UInt8](repeating: 1, count: 150_000), name: "More", at: [], load: 0, exec: 0) }) {
+                guard case .discFull = $0 as? ADFSError else { return XCTFail("\(format): \($0)") }
+            }
+        }
+    }
+
+    /// Real copy protected discs (JFD images, when present): they read, and
+    /// filling them leaves their protection tracks and files as they were.
+    func testCopyProtectedDiscs() throws {
+        let discs = ["Holed Out!! (1989) (The Fourth Dimension) F1019900/Discs/Holed Out!! (1989) (The Fourth Dimension) F1019901.jfd",
+                     "Stunt Racer 2000 (1993) (The Fourth Dimension) F1035100/Discs/Stunt Racer 2000 (1993) (The Fourth Dimension) F1035102.jfd"]
+        var tried = 0
+        for name in discs {
+            let path = ClassicsTests.root.appendingPathComponent("discimages/" + name).path
+            guard FileManager.default.fileExists(atPath: path) else { continue }
+            tried += 1
+            let image = try FloppyImage.open(path: path)
+            let store = ADFSFloppyStore(image: image)
+            let unusable = store.unusableAreas()
+            XCTAssertFalse(unusable.isEmpty, name)
+            // Every track as the controller sees it, and every file.
+            func tracks() -> [[[UInt8]]] {
+                (0..<image.geometry.tracks).flatMap { t in (0..<2).map { side in image.layout(side: side, track: t).map(image.readData) } }
+            }
+            let before = tracks()
+            // All their free space is on protection tracks; deleting a file makes room.
+            XCTAssertEqual(try ADFSVolume(store: store).freeBytes, 0, name)
+            var original = try Self.files(ADFSVolume(store: store))
+            let biggest = original.max { $0.value.count < $1.value.count }!.key
+            let parts = biggest.split(separator: ".").map(String.init)
+            try ADFSVolume.edit(store) { v in
+                try v.setInfo(parts.last!, at: Array(parts.dropLast()), attributes: 0x03)
+                try v.delete(parts.last!, at: Array(parts.dropLast()))
+            }
+            original[biggest] = nil
+            let room = try ADFSVolume(store: store).freeBytes
+            XCTAssertGreaterThan(room, 20_000, name)
+            var added = 0
+            do {
+                while true {
+                    try ADFSVolume.edit(store) { try $0.save([UInt8](repeating: UInt8(added & 0xFF), count: 9_000), name: "Add\(added)", at: [], load: 0, exec: 0) }
+                    added += 1
+                }
+            } catch ADFSError.discFull {
+            } catch ADFSError.directoryFull {
+            }
+            let v = try ADFSVolume(store: store)
+            XCTAssertEqual(added, (room - v.freeBytes) / 9_216, "\(name): the room went on new files")
+            XCTAssertLessThan(v.freeBytes, 9_216 * 2, "\(name): filled")
+            XCTAssertEqual(try v.check(), [], name)
+            for i in 0..<added {
+                let e = try v.entry("Add\(i)", at: [])
+                XCTAssertEqual(try v.contents(of: e.name, at: []), [UInt8](repeating: UInt8(i & 0xFF), count: 9_000))
+                for x in try v.map.extents(e.address, length: e.length) {
+                    XCTAssertFalse(unusable.contains { $0.overlaps(x.start..<(x.start + x.count)) }, "\(name): Add\(i) is on a protection track")
+                }
+            }
+            for (p, data) in original { XCTAssertEqual(try v.contents(of: String(p.split(separator: ".").last!), at: p.split(separator: ".").dropLast().map(String.init)), data, p) }
+            // The odd tracks are as they were.
+            let after = tracks(), track = image.geometry.sectorsPerTrack * image.geometry.sectorSize
+            for a in unusable {
+                for t in stride(from: a.lowerBound / track, to: a.upperBound / track, by: 1) {
+                    let p = store.place(t * image.geometry.sectorsPerTrack)
+                    XCTAssertEqual(after[p.track * 2 + p.side], before[p.track * 2 + p.side], "\(name): logical track \(t)")
+                }
+            }
+        }
+        if tried == 0 { throw XCTSkip("no copy protected discs in ./discimages") }
+    }
+
+    /// Repton 3's map ends with an empty free area, which RISC OS ignores.
+    func testEmptyFreeAreas() throws {
+        let path = ClassicsTests.root.appendingPathComponent("discimages/adfs_Repton_3.adf").path
+        guard FileManager.default.fileExists(atPath: path) else { throw XCTSkip("Repton 3 not present") }
+        let store = ADFSFloppyStore(image: try FloppyImage.open(path: path))
+        let files = try Self.files(ADFSVolume(store: store))
+        XCTAssertFalse(files.isEmpty)
+        // It's full, so a rename: the map (a new disc ID) and root rewritten.
+        let first = try ADFSVolume(store: store).entries(at: []).first { !$0.isDirectory }!
+        try ADFSVolume.edit(store) { try $0.rename(first.name, at: [], to: "Renamed") }
+        let v = try ADFSVolume(store: store)
+        XCTAssertEqual(try v.check(), [])
+        var expected = files
+        expected["Renamed"] = expected.removeValue(forKey: first.name)
+        XCTAssertEqual(try Self.files(v), expected)
+    }
+
     func testFillingAndFreeingFragmentsTheNewMap() throws {
         let store = Self.store(.e)
         // Alternate sizes, delete every other one, then fit one bigger than any gap.

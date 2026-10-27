@@ -64,6 +64,8 @@ final class DiscContentsModel {
     /// Waiting for a drive to be still before changing its disc.
     private(set) var waiting = false
     var alert: String?
+    var alertTitle = DiscContentsModel.cantChange
+    nonisolated static let cantChange = "The disc can’t be changed"
 
     init(machine: MachineController) {
         self.machine = machine
@@ -92,12 +94,12 @@ final class DiscContentsModel {
     /// Where a disc's bytes can be read again, off the main thread: a copy
     /// of a floppy, or a hard disc's file.
     enum ExportSource: Sendable {
-        case bytes([UInt8], sectorSize: Int)
+        case bytes([UInt8], sectorSize: Int, unreadable: [Range<Int>])
         case file(String, sectorSize: Int)
 
         func volume() throws -> ADFSVolume {
             switch self {
-            case .bytes(let b, let s): try ADFSVolume(store: ADFSMemoryStore(bytes: b, sectorSize: s))
+            case .bytes(let b, let s, let bad): try ADFSVolume(store: ADFSMemoryStore(bytes: b, sectorSize: s, unreadable: bad))
             case .file(let p, let s): try ADFSVolume(store: ADFSFileStore(path: p, sectorSize: s, writable: false))
             }
         }
@@ -150,12 +152,19 @@ final class DiscContentsModel {
             var result: Result<ExportSource, Error>?
             switch drive {
             case .floppy:
-                let read: Result<[UInt8], Error>?? = await onEmulation { s in
+                // Sector by sector: a copy protected disc's odd sectors stay
+                // unreadable, and the rest can still be shown.
+                let read: ExportSource?? = await onEmulation { s in
                     guard let image = s.machine.fdc.drives[0].disc else { return nil }
                     let store = ADFSFloppyStore(image: image)
-                    return Result { try store.read(0, store.size) }
+                    let bad = store.unreadableAreas()
+                    var bytes = [UInt8](repeating: 0, count: store.size)
+                    for n in 0..<(store.size / store.sectorSize) where !bad.contains(where: { $0.contains(n * store.sectorSize) }) {
+                        if let d = try? store.read(n * store.sectorSize, store.sectorSize) { bytes.replaceSubrange((n * store.sectorSize)..<((n + 1) * store.sectorSize), with: d) }
+                    }
+                    return .bytes(bytes, sectorSize: store.sectorSize, unreadable: bad)
                 }
-                if let read = read ?? nil { result = read.map { .bytes($0, sectorSize: 1024) } }
+                if let read = read ?? nil { result = .success(read) }
             case .hard(let slot):
                 if hardDiscs.indices.contains(slot), let p = hardDiscs[slot] { result = .success(.file(p, sectorSize: sectorSize)) }
             }
@@ -324,7 +333,7 @@ final class DiscContentsModel {
                     return
                 }
             }
-            alert = "The floppy drive is still in use, so the disc can’t be changed. Try again when RISC OS has finished with it"
+            alert = "The floppy drive is still in use, so the disc can’t be changed. Try again when RISC OS has finished with it."
                 + (machine.paused ? ", with the machine running again." : ".")
         }
     }
@@ -456,10 +465,22 @@ final class DiscContentsModel {
     }
 
     /// Writes entries into `folder`: files named with their RISC OS types
-    /// (",xxx"), directories as folders.
+    /// (",xxx"), directories as folders. Says which files couldn't be read.
     func export(_ entries: [ADFSVolume.Entry], to folder: URL) throws {
         guard let volume else { return }
-        for e in entries { try ADFSExport.write(e, from: volume, at: path, to: folder.appendingPathComponent(ADFSExport.macName(e))) }
+        var skipped: [String] = []
+        for e in entries { skipped += try ADFSExport.write(e, from: volume, at: path, to: folder.appendingPathComponent(ADFSExport.macName(e))) }
+        if !skipped.isEmpty { showSkipped(skipped) }
+    }
+
+    func showSkipped(_ skipped: [String]) {
+        alertTitle = "Some files couldn’t be copied"
+        alert = Self.skippedMessage(skipped)
+    }
+
+    nonisolated static func skippedMessage(_ skipped: [String]) -> String {
+        let list = skipped.prefix(8).joined(separator: "\n") + (skipped.count > 8 ? "\n…and \(skipped.count - 8) more" : "")
+        return "These files are on sectors that aren't standard ADFS ones (the disc may be copy protected), so they were left out:\n\(list)"
     }
 }
 

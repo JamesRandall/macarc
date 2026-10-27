@@ -18,6 +18,7 @@ final class ADFSOldMap: ADFSMapping {
     let rootAddress: UInt32
     let directorySize: Int
     let directorySignature = "Hugo"
+    var unusable: [Range<Int>] = []
     var changed = false
 
     init?(store: ADFSStore) throws {
@@ -44,7 +45,9 @@ final class ADFSOldMap: ADFSMapping {
         var free: [(start: Int, length: Int)] = []
         for i in 0..<(end / 3) {
             let s = get24(3 * i), l = get24(0x100 + 3 * i)
-            guard l > 0, (s + l) * 256 <= discSize else { throw ADFSError.damaged("a free area lies beyond the disc") }
+            // Empty entries (Repton 3 has one, at the disc's end) are dropped.
+            if l == 0 { continue }
+            guard (s + l) * 256 <= discSize else { throw ADFSError.damaged("a free area lies beyond the disc") }
             free.append((s, l))
         }
         self.map = map
@@ -89,11 +92,16 @@ final class ADFSOldMap: ADFSMapping {
 
     func roundUp(_ n: Int) -> Int { let u = unit * 256; return (max(n, 1) + u - 1) / u * u }
 
-    /// First fit, on a sector boundary.
+    /// First fit, on a sector boundary, clear of unusable areas.
     func allocate(_ length: Int) throws -> UInt32 {
         let need = roundUp(length) / 256
+        func aligned(_ n: Int) -> Int { (n + unit - 1) / unit * unit }
         for (i, f) in free.enumerated() {
-            let start = (f.start + unit - 1) / unit * unit
+            var start = aligned(f.start)
+            while start + need <= f.start + f.length,
+                  let bad = unusable.first(where: { $0.overlaps((start * 256)..<((start + need) * 256)) }) {
+                start = aligned((bad.upperBound + 255) / 256)
+            }
             guard start + need <= f.start + f.length else { continue }
             var pieces: [(start: Int, length: Int)] = []
             if start > f.start { pieces.append((f.start, start - f.start)) }
@@ -103,7 +111,7 @@ final class ADFSOldMap: ADFSMapping {
             changed = true
             return UInt32(start)
         }
-        throw ADFSError.discFull(needed: need * 256, free: freeBytes)
+        throw ADFSError.discFull(needed: need * 256, free: usableFreeBytes)
     }
 
     func release(_ address: UInt32, length: Int, stillUsed: () throws -> Bool) throws {
@@ -174,6 +182,7 @@ final class ADFSNewMap: ADFSMapping {
     let formatName: String
     let directorySignature = "Nick"
     let directorySize = 2048
+    var unusable: [Range<Int>] = []
     var zones: [[UInt8]]
     var runs: [[Run]]
     var dirty: Set<Int> = []
@@ -400,28 +409,60 @@ final class ADFSNewMap: ADFSMapping {
 
     func roundUp(_ bits: Int) -> Int { (bits + sectorBits - 1) / sectorBits * sectorBits }
 
+    /// Where in the free run `r` an object can go: the bits before it (as
+    /// `front` reckons them) and how many it can have, keeping clear of
+    /// unusable areas. The first stretch with `need` bits, else the longest.
+    func room(_ z: Int, _ r: Run, need: Int) -> (front: Int, avail: Int) {
+        let end = r.start + r.length
+        guard !unusable.isEmpty else { let f = front(z, r); return (f, r.length - f) }
+        // The unusable areas as bits of this run.
+        let bad = unusable.compactMap { a -> Range<Int>? in
+            let lo = (a.lowerBound >> log2bpmb) - firstBlock(z) + firstBit(z)
+            let hi = ((a.upperBound + (1 << log2bpmb) - 1) >> log2bpmb) - firstBlock(z) + firstBit(z)
+            let b = max(lo, r.start)..<max(max(lo, r.start), min(hi, end))
+            return b.isEmpty ? nil : b
+        }.sorted { $0.lowerBound < $1.lowerBound }
+        var stretches: [Range<Int>] = [], from = r.start
+        for b in bad {
+            if b.lowerBound > from { stretches.append(from..<b.lowerBound) }
+            from = max(from, b.upperBound)
+        }
+        if from < end { stretches.append(from..<end) }
+        var best = (front: 0, avail: 0)
+        for st in stretches {
+            // Onto a sector boundary, leaving any free bits before it a run of their own.
+            let block = st.lowerBound - firstBit(z) + firstBlock(z)
+            var f = st.lowerBound - r.start + (sectorBits - block % sectorBits) % sectorBits
+            while f > 0 && f < idlen + 1 { f += sectorBits }
+            let avail = st.upperBound - r.start - f
+            if avail >= need { return (f, avail) }
+            if avail > best.avail { best = (f, avail) }
+        }
+        return best
+    }
+
     func allocate(_ length: Int) throws -> UInt32 {
         let need = roundUp(max(idlen + 1, (length + (1 << log2bpmb) - 1) >> log2bpmb))
         let used = usedIDs
         // One fragment, first fit.
         for z in 0..<nzones {
             for (i, r) in runs[z].enumerated() where r.id == nil {
-                let f = front(z, r)
-                guard f + need <= r.length, let id = freeID(in: z, used: used) else { continue }
+                let (f, avail) = room(z, r, need: need)
+                guard need <= avail, let id = freeID(in: z, used: used) else { continue }
                 take([(z, i, f, need)], id: id)
                 return UInt32(id << 8)
             }
         }
         // Several, all with one id, in the order they'll be looked for.
-        guard let first = (0..<nzones).first(where: { z in runs[z].contains { $0.id == nil && $0.length - front(z, $0) >= idlen + 1 } }),
+        guard let first = (0..<nzones).first(where: { z in runs[z].contains { $0.id == nil && room(z, $0, need: need).avail >= idlen + 1 } }),
               let id = freeID(in: first, used: used) else {
-            throw ADFSError.discFull(needed: need << log2bpmb, free: freeBytes)
+            throw ADFSError.discFull(needed: need << log2bpmb, free: usableFreeBytes)
         }
         var picks: [(zone: Int, index: Int, front: Int, bits: Int)] = []
         var remaining = need
         outer: for z in zoneOrder(from: first) {
             for (i, r) in runs[z].enumerated() where r.id == nil {
-                let f = front(z, r), avail = r.length - f
+                let (f, avail) = room(z, r, need: remaining)
                 guard avail >= idlen + 1 else { continue }
                 var bits = min(avail, roundUp(max(remaining, idlen + 1)))
                 if avail - bits < idlen + 1 { bits = avail }
@@ -430,7 +471,7 @@ final class ADFSNewMap: ADFSMapping {
                 if remaining <= 0 { break outer }
             }
         }
-        guard remaining <= 0 else { throw ADFSError.discFull(needed: need << log2bpmb, free: freeBytes) }
+        guard remaining <= 0 else { throw ADFSError.discFull(needed: need << log2bpmb, free: usableFreeBytes) }
         take(picks, id: id)
         return UInt32(id << 8)
     }

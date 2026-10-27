@@ -104,6 +104,7 @@ public final class ADFSVolume {
         } else {
             throw ADFSError.notADFS
         }
+        map.unusable = store.unusableAreas()
         _ = try directory(at: map.rootAddress, path: "$")
     }
 
@@ -127,7 +128,8 @@ public final class ADFSVolume {
     /// L, M and S format: names are plain ASCII, and only R, W, L and D are kept.
     public var hasOldDirectories: Bool { map.directorySize == Directory.oldSize }
     public var size: Int { map.discSize }
-    public var freeBytes: Int { map.freeBytes }
+    /// Free space that can be used: not counting a protected disc's odd tracks.
+    public var freeBytes: Int { map.usableFreeBytes }
 
     public var discName: String {
         String(String.UnicodeScalarView(map.discName.prefix { $0 > 0x20 && $0 != 0x7F }.map { Unicode.Scalar($0) }))
@@ -577,6 +579,15 @@ public final class ADFSVolume {
     }
 }
 
+extension ADFSMapping {
+    /// Free space outside the unusable areas.
+    var usableFreeBytes: Int {
+        freeAreas.reduce(0) { total, f in
+            total + (f.end - f.start) - unusable.reduce(0) { $0 + $1.clamped(to: f.start..<f.end).count }
+        }
+    }
+}
+
 /// How a disc's space is mapped: where objects are, and what's free.
 protocol ADFSMapping: AnyObject {
     var formatName: String { get }
@@ -587,6 +598,9 @@ protocol ADFSMapping: AnyObject {
     var directorySignature: String { get }
     /// 2048, or 1280 for the old directories of L, M and S format.
     var directorySize: Int { get }
+    /// Byte ranges new objects mustn't use, though the map may say they're
+    /// free (a copy protected disc's odd tracks). Not recorded on the disc.
+    var unusable: [Range<Int>] { get set }
     var discName: [UInt8] { get set }
     var bootOption: UInt8 { get set }
     /// Problems with the map itself, for `check`.
