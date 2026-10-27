@@ -526,6 +526,20 @@ public final class Machine {
         deviceLog.append("floppy \(drive): ejected")
     }
 
+    /// Whether the floppy drives have been still for `seconds`, so a disc's
+    /// files can be changed under RISC OS without catching it part way
+    /// through a transfer.
+    public func floppyIsIdle(seconds: Double = 2) -> Bool {
+        !fdc.motorOn && scheduler.now &- fdc.motorOffTick >= MasterClock.ticks(milliseconds: UInt64(seconds * 1000))
+    }
+
+    /// Says the disc in `drive` has changed, as taking it out and putting
+    /// it back would: after its files are changed from outside.
+    public func noteFloppyChanged(drive: Int = 0) {
+        fdc.drives[drive].discChanged = true
+        deviceLog.append("floppy \(drive): changed")
+    }
+
     // MARK: CMOS
 
     public var cmos: [UInt8] { rtc.ram }

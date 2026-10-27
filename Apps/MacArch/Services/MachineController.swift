@@ -43,6 +43,8 @@ final class MachineController {
     /// Hard disc image paths by drive (400 series).
     private(set) var hardDiscs = AppSettings.shared.hardDiscs(for: AppSettings.shared.model)
     private(set) var discName: String?
+    /// Drive 0 holds a new disc that has never been saved to a file.
+    private(set) var discIsUntitled = false
     /// Whether drive 0's disc has unsaved changes, and whether they can be saved.
     private(set) var disc = EmulatorHost.DiscState()
     private(set) var lights = Machine.Lights()
@@ -91,6 +93,9 @@ final class MachineController {
     var debuggerRequested = false
     /// Set to open the Configure Machine window (from the toolbar).
     var configureRequested = false
+    /// Set to open the Disc Contents window, showing this drive.
+    var discContentsRequested = false
+    var discContentsDrive: DiscDrive?
     /// Why the debugger has stopped the machine, if it has.
     private(set) var debugStop: String?
     @ObservationIgnored private var debugStopCount = 0
@@ -507,6 +512,7 @@ final class MachineController {
             let img = try FloppyImage.open(path: url.path)
             host?.send { $0.machine.insertFloppy(img) }
             discName = url.lastPathComponent
+            discIsUntitled = false
             AppSettings.shared.addRecent(url.path)
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
         } catch {
@@ -514,11 +520,22 @@ final class MachineController {
         }
     }
 
+    /// Puts a newly formatted disc in drive 0, to be saved somewhere later.
+    func insertBlankDisc(_ format: ADFSFloppyFormatter.Format) {
+        guard confirmDiscChanges(before: "inserting another disc") else { return }
+        stopSessionDiscs()
+        let img = FloppyImage.blank(format, name: "Untitled")
+        host?.send { $0.machine.insertFloppy(img) }
+        discName = "Untitled"
+        discIsUntitled = true
+    }
+
     func ejectDisc() {
         guard confirmDiscChanges(before: "ejecting it") else { return }
         stopSessionDiscs()
         host?.send { $0.machine.ejectFloppy() }
         discName = nil
+        discIsUntitled = false
         owner?.station(self, didEject: 0)
     }
 
@@ -529,6 +546,8 @@ final class MachineController {
     @discardableResult
     func saveDisc(to url: URL? = nil) -> Bool {
         guard let host else { return false }
+        // A new disc has nowhere to go back to.
+        if url == nil && discIsUntitled { return saveDiscAs() }
         let error: Error? = host.sendAndWait { s in
             guard let image = s.machine.fdc.drives[0].disc else { return nil }
             do {
@@ -544,6 +563,7 @@ final class MachineController {
         }
         if let url {
             discName = url.lastPathComponent
+            discIsUntitled = false
             AppSettings.shared.addRecent(url.path)
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
         }
@@ -551,13 +571,14 @@ final class MachineController {
         return true
     }
 
-    func saveDiscAs() {
+    @discardableResult
+    func saveDiscAs() -> Bool {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [UTType(filenameExtension: "adf") ?? .data]
-        panel.nameFieldStringValue = discName.map { ($0 as NSString).deletingPathExtension + " copy.adf" } ?? "Disc.adf"
+        panel.nameFieldStringValue = discIsUntitled ? "Untitled.adf" : discName.map { ($0 as NSString).deletingPathExtension + " copy.adf" } ?? "Disc.adf"
         panel.message = "Save the disc, with its changes, as a new ADF image. The machine then uses the new file."
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        saveDisc(to: url)
+        guard panel.runModal() == .OK, let url = panel.url else { return false }
+        return saveDisc(to: url)
     }
 
     /// Before the disc's changes would be lost: offers to save them. Returns
@@ -567,7 +588,7 @@ final class MachineController {
         let a = NSAlert()
         a.messageText = "Save the changes to \(name) before \(action)?"
         if host.disc.savable {
-            a.informativeText = "The changes are only in memory; the image file has not been changed."
+            a.informativeText = discIsUntitled ? "It's a new disc, only in memory." : "The changes are only in memory; the image file has not been changed."
             a.addButton(withTitle: "Save")
             a.addButton(withTitle: "Don't Save")
             a.addButton(withTitle: "Cancel")

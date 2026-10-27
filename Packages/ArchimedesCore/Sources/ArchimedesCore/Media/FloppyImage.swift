@@ -66,6 +66,8 @@ public final class FloppyImage {
     public var writeProtected: Bool
 
     public var isModified: Bool { !overlay.isEmpty || !addedSectors.isEmpty }
+    /// Sector writes so far, to notice the disc changing.
+    public private(set) var writeCount = 0
 
     public init(data: [UInt8], geometry: DiscGeometry, sourcePath: String? = nil, writeProtected: Bool = false) {
         self.base = data
@@ -153,6 +155,7 @@ public final class FloppyImage {
         var d = Array(data.prefix(h.size))
         if d.count < h.size { d += [UInt8](repeating: 0, count: h.size - d.count) }
         overlay[h.dataOffset] = d
+        writeCount += 1
         return true
     }
 

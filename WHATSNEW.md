@@ -1,5 +1,11 @@
 # What's New in MacArch
 
+- **Disc contents:** File ▸ Show Disc Contents (⇧⌘I) lists the files on a floppy (ADFS D, E or F) or a hard disc, as MacBeeb's does. Drag files out to Finder, named with their RISC OS types (`ReadMe,fff`), or drag Mac files and folders in. Rename, retype, relock and delete files, make directories, and set the disc's name and boot option, all with undo. RISC OS sees a floppy's changes straight away; a hard disc's restart the machine. File ▸ New Disc puts in a blank one.
+
+- **View ▸ Border:** show the full border around the desktop, a little of it, or none.
+
+- **Window ▸ Make 16:9:** makes the machine's window 16:9 at its height.
+
 - **Import from Welcome:** Import Machine… starts a JSON configuration directly from the Archimedes card; the Machine menu import also works before a machine is running.
 
 - **Machine configurations:** import/export JSON from the Machine menu or Configure Machine, with current CMOS, relative paths and validation before restart.

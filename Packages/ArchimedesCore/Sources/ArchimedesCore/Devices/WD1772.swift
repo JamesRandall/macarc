@@ -52,7 +52,11 @@ public final class WD1772 {
     var stepDirection = 1
     var typeI = true
 
-    var motorOn = false
+    var motorOn = false {
+        didSet { if oldValue && !motorOn { motorOffTick = scheduler.now } }
+    }
+    /// When the motor last stopped.
+    var motorOffTick: UInt64 = 0
     /// Drive activity light (A3000: lit while the drive is selected and its motor runs).
     public func light(drive d: Int) -> Bool { motorOn && selectedDrive == d }
     var motorIdleRevolutions = 0

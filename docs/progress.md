@@ -332,3 +332,11 @@
   - **Threads:** `LockstepWorkers` (core, after MacBeeb's): spare threads run some stations each quantum, spinning between quanta and parking when idle. The network adds a thread when it falls short of real time and keeps it only if it helps. The School Classroom flat out: 6.4× real time on one thread, 9.3× on three. `EconetTests.testThreadsDontChangeTheRun`: three threads give the same frames and screens as one.
   - **macOS 26:** MacArch now targets macOS 26 with Swift tools 6.2, as MacBeeb does (still Swift 5 language mode), so its toolbars take the system's current look.
 - Not yet: joining MacBeeb's networks (AUN, or a shared line between the apps).
+
+## Disc contents: editing floppies and hard discs from the Mac (2026-10-27)
+
+- After MacBeeb's Disc Contents window, with hard discs too. Core (`Media/ADFSStore`, `ADFSVolume`, `ADFSMaps`, `ADFSHostFiles`): ADFS D, E and F floppies and old- and new-map hard discs (up to 512 MB), read and written through `ADFSVolume`: save, make directory, rename, set info, delete, disc name and boot option. New-map allocation is first fit, then several fragments under one id. Every change is buffered, so one that fails leaves the disc alone, gets a new disc ID, and records each 256-byte block it replaced for undo.
+- Mac files: `,xxx` suffixes, `,llllllll-eeeeeeee` load and exec addresses, `.inf` files, known extensions as filetypes and `.bas` text tokenised. Dragged-out files carry `,xxx` names.
+- Reaching RISC OS: a floppy's change waits until the drive has been idle 2 s, goes into the image's changes (kept by Save Disc Changes) and raises the disc-changed latch. A hard disc's waits until the machine stops writing, holds its writes, edits the file and restarts the machine.
+- App (`DiscContents/`): one window per machine with a drive picker, table, drag in and out, Get Info, New Directory, Export and undo; File ▸ New Disc makes blank E or D floppies.
+- Tests (`DiscEditingTests`): every disc in `top25/` checks out clean (43 E, 4 D, 1 F); RISC OS 3.11 and 2.00 see changes to E and D floppies live and their own writes leave the disc sound; RISC OS reads a changed hard disc after the restart.

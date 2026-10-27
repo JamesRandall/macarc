@@ -207,5 +207,7 @@ private struct DiscItems: View {
             .disabled(machine.discName == nil || !machine.disc.savable)
         Button("Eject Disc") { machine.ejectDisc() }
             .disabled(machine.discName == nil)
+        Divider()
+        Button("Show Disc Contents") { machine.showDiscContents(.floppy) }
     }
 }

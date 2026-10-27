@@ -40,6 +40,15 @@ struct MacArchApp: App {
                 Button("Eject Disc") { machine?.ejectDisc() }
                     .keyboardShortcut("e")
                     .disabled(machine?.discName == nil)
+                Menu("New Disc") {
+                    ForEach(ADFSFloppyFormatter.Format.allCases, id: \.self) { f in
+                        Button(f.name) { machine?.insertBlankDisc(f) }
+                    }
+                }
+                .disabled(machine?.host == nil)
+                Button("Show Disc Contents") { machine?.showDiscContents(.floppy) }
+                    .keyboardShortcut("i", modifiers: [.command, .shift])
+                    .disabled(machine?.host == nil)
                 Divider()
                 HardDiscMenus(machine: machine)
                 Divider()
@@ -228,6 +237,15 @@ struct MacArchApp: App {
         }
         .defaultSize(width: 1100, height: 760)
 
+        WindowGroup("Disc Contents", id: DiscContentsWindow.windowID, for: UUID.self) { $id in
+            if let id, let machine = MachineController.all[id] {
+                DiscContentsWindow(machine: machine)
+            } else {
+                ClosesItself()
+            }
+        }
+        .defaultSize(width: 640, height: 520)
+
         WindowGroup("Configure Machine", id: "configure", for: UUID.self) { $id in
             if let id, let machine = MachineController.all[id] {
                 ConfigureMachineWindow(machine: machine)
@@ -361,6 +379,8 @@ struct HardDiscItems: View {
                 Section("Drive :\(drive + 4)" + (machine?.hardDiscName(drive).map { " — \($0)" } ?? "")) {
                     Button("New Hard Disc…") { machine?.newHardDisc(drive: drive) }
                     Button("New Hard Disc from Files…") { machine?.newHardDiscFromFiles(drive: drive) }
+                    Button("Show Hard Disc Contents") { machine?.showDiscContents(.hard(drive)) }
+                        .disabled(machine?.hardDiscName(drive) == nil)
                     Button("Add Files to Hard Disc…") { machine?.addFilesToHardDisc(drive: drive) }
                         .disabled(machine?.hardDiscName(drive) == nil)
                     Button("Resize Hard Disc…") { machine?.resizeHardDisc(drive: drive) }
@@ -481,6 +501,12 @@ struct MachineScreen: View {
             if machine.configureRequested {
                 machine.configureRequested = false
                 openWindow(id: "configure", value: machine.id)
+            }
+        }
+        .onChange(of: machine.discContentsRequested) {
+            if machine.discContentsRequested {
+                machine.discContentsRequested = false
+                openWindow(id: DiscContentsWindow.windowID, value: machine.id)
             }
         }
     }
