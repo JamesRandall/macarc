@@ -130,6 +130,10 @@ struct MacArchApp: App {
                 .disabled(machine?.host == nil)
             }
             CommandMenu("MCP") { MCPMenu() }
+            CommandGroup(after: .windowSize) {
+                Button("Make 16:9") { machine?.makeWidescreen() }
+                    .disabled(machine?.host == nil)
+            }
             CommandGroup(before: .windowList) {
                 WelcomeMenuItem()
                 GameLibraryMenuItem()

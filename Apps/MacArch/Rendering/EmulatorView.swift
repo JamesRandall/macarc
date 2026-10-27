@@ -15,6 +15,8 @@ final class EmulatorNSView: MTKView {
 
     /// Posted (with the controller, and "zoom" in userInfo) by View > Zoom.
     static let setZoom = Notification.Name("MacArchSetZoom")
+    /// Posted (with the controller) by Window > Make 16:9.
+    static let makeWidescreen = Notification.Name("MacArchMakeWidescreen")
     /// Called with the picture's zoom (its height over the frame's actual
     /// height) when the view is resized.
     var onZoom: (Double) -> Void = { _ in }
@@ -45,6 +47,25 @@ final class EmulatorNSView: MTKView {
         }
         let target = CGSize(width: (height * renderer.aspect).rounded(), height: height.rounded())
         let size = CGSize(width: frame.width + target.width - content.width, height: frame.height + target.height - content.height)
+        frame.origin.y += frame.height - size.height
+        frame.size = size
+        if let screen = window.screen?.visibleFrame {
+            frame.origin.x = max(screen.minX, min(frame.origin.x, screen.maxX - frame.width))
+            frame.origin.y = max(screen.minY, min(frame.origin.y, screen.maxY - frame.height))
+        }
+        window.setFrame(frame, display: true, animate: true)
+    }
+
+    /// Makes the window 16:9 at its height (less, if that's wider than the
+    /// screen), keeping its top left in place and on screen.
+    @objc private func applyWidescreen(_ n: Notification) {
+        guard (n.object as AnyObject?) === machine, let window else { return }
+        var frame = window.frame
+        var height = frame.height
+        if let screen = window.screen?.visibleFrame {
+            height = min(height, screen.width * 9 / 16)
+        }
+        let size = CGSize(width: (height * 16 / 9).rounded(), height: height.rounded())
         frame.origin.y += frame.height - size.height
         frame.size = size
         if let screen = window.screen?.visibleFrame {
@@ -262,6 +283,7 @@ final class EmulatorNSView: MTKView {
         nc.addObserver(self, selector: #selector(windowDidResignKey), name: NSWindow.didResignKeyNotification, object: window)
         nc.addObserver(self, selector: #selector(toggleMouseCapture), name: Self.toggleMouseCapture, object: nil)
         nc.addObserver(self, selector: #selector(applyZoom), name: Self.setZoom, object: nil)
+        nc.addObserver(self, selector: #selector(applyWidescreen), name: Self.makeWidescreen, object: nil)
     }
 
     @objc private func windowDidResignKey(_ n: Notification) {

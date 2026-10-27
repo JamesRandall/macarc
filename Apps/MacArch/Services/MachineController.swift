@@ -1155,6 +1155,11 @@ final class MachineController {
         NotificationCenter.default.post(name: EmulatorNSView.setZoom, object: self, userInfo: ["zoom": z])
     }
 
+    /// Window ▸ Make 16:9.
+    func makeWidescreen() {
+        NotificationCenter.default.post(name: EmulatorNSView.makeWidescreen, object: self)
+    }
+
     func zoom(in zoomIn: Bool) {
         let next = zoomIn ? Self.zoomLevels.first { $0 > currentZoom * 1.01 } : Self.zoomLevels.last { $0 < currentZoom * 0.99 }
         if let next { setZoom(next) }
