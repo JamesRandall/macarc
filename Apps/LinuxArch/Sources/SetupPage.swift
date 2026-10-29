@@ -66,7 +66,7 @@ final class SetupPage {
             if self.romPath == nil || !roms.contains(where: { $0.path == self.romPath }) {
                 self.romPath = AppSettings.shared.romPath ?? roms.last?.path
             }
-            UI.setItems(comboRow: self.romRow, roms.map(\.version), selected: roms.firstIndex { $0.path == self.romPath } ?? 0)
+            UI.setItems(comboRow: self.romRow, roms.map(AppSettings.shared.label), selected: roms.firstIndex { $0.path == self.romPath } ?? 0)
             self.romRow.setVisible(!roms.isEmpty)
             self.switchOn.setSensitive(!roms.isEmpty)
             if let error = machine.startError {

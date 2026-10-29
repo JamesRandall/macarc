@@ -233,7 +233,7 @@ struct MachineInspector: View {
                         s.rom = AppSettings.shared.romLibrary.first { $0.path == path }?.version
                         session.setSetup(node.id, s)
                     })) {
-                        ForEach(AppSettings.shared.romLibrary) { Text($0.version).tag($0.path) }
+                        ForEach(AppSettings.shared.romLibrary) { Text(AppSettings.shared.label($0)).tag($0.path) }
                     }
                     .labelsHidden()
                 }

@@ -91,6 +91,15 @@ export class ArcMachine {
   key(code, down) { this.mod.check(this.x.arc_key(this.handle, code, down ? 1 : 0)); }
   mouseMove(dx, dy) { this.mod.check(this.x.arc_mouse_move(this.handle, dx | 0, dy | 0)); }
   releaseKeys() { this.mod.check(this.x.arc_release_keys(this.handle)); }
+  /**
+   * Steers RISC OS's pointer to the host's, at (x, y) in frame pixels; while
+   * RISC OS's pointer is off, (dx, dy) goes as counts instead. null stops.
+   * @returns {boolean} whether the host's own pointer can be hidden there
+   */
+  followPointer(spot, dx = 0, dy = 0) {
+    const on = spot ? 1 : 0;
+    return this.mod.check(this.x.arc_follow_pointer(this.handle, on, spot?.x | 0, spot?.y | 0, dx | 0, dy | 0)) === 1;
+  }
 
   insertFloppy(bytes, { drive = 0, writeProtected = false } = {}) {
     this.mod.withBytes(bytes, (p, n) => this.mod.check(this.x.arc_insert_floppy(this.handle, drive, p, n, writeProtected ? 1 : 0)));

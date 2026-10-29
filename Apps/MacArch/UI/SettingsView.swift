@@ -34,7 +34,7 @@ struct MachineSettingsView: View {
                 ForEach(settings.romLibrary) { rom in
                     HStack {
                         VStack(alignment: .leading) {
-                            Text(rom.version)
+                            Text(settings.label(rom))
                             Text(rom.path).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                         }
                         Spacer()

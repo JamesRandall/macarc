@@ -56,6 +56,10 @@ public enum ROMImporter {
             Known(title: "RISC OS 2.00", note: "UK release, 05 Oct 1988 (512 KB)"),
         "d83d2e8cbb6adb1c37883e194c527279b5233c5ce3b0c9c324f6f6ae91447f2d":
             Known(title: "ArcLibre 0.8", note: "Free ROM from RISC OS's public sources, 28 Oct 2026 (2 MB)"),
+        "ee1c8f489ba8d3cc7e6964eee6acae9df41413b3607d4f6943a22fb1951a944c":
+            Known(title: "ArcLibre 0.9", note: "Free ROM from RISC OS's public sources, 29 Oct 2026 (2 MB)"),
+        "d50d370b3254e1a159c26b19e893f2b1b6d440fee0a4b80669739e5449ca062e":
+            Known(title: "ArcLibre 0.9", note: "Free ROM from RISC OS's public sources, with DOSFS, Alarm and printing, 29 Oct 2026 (4 MB)"),
     ]
 
     /// Sizes a whole OS ROM comes in: Arthur and RISC OS 2 512 KB, RISC OS 3
@@ -279,11 +283,29 @@ public enum ROMImporter {
 
     // MARK: Installing
 
-    /// Models this ROM can drive. The A5000 family's ADFS needs RISC OS 3
-    /// (ArcLibre has only the earlier machines' drivers).
+    /// Models this ROM can drive.
     public static func models(for rom: ROMImage) -> [MachineModel] {
-        let three = rom.versionString.hasPrefix("RISC OS 3")
-        return MachineModel.allCases.filter { three || !$0.hasNewIO }
+        models(version: rom.versionString, size: rom.data.count)
+    }
+
+    /// Models a ROM of this version and size can drive. The A5000 family's
+    /// ADFS needs RISC OS 3, or ArcLibre 0.9 or later (0.8 had only the
+    /// earlier machines' drivers). ArcLibre's 4 MB ROM is for the A5000
+    /// family alone: the earlier machines' sockets take at most 2 MB.
+    public static func models(version: String, size: Int) -> [MachineModel] {
+        MachineModel.allCases.filter { whyNot(version: version, size: size, on: $0) == nil }
+    }
+
+    /// Why a ROM can't drive a model ("Not for the A3000: …"), or nil if it can.
+    public static func whyNot(version: String, size: Int, on model: MachineModel) -> String? {
+        if version.hasPrefix("ArcLibre") {
+            let number = version.dropFirst("ArcLibre ".count).prefix { $0.isNumber || $0 == "." }
+            if size > 2 << 20 && !model.hasNewIO { return "its ROM sockets take at most 2 MB; ArcLibre's 4 MB ROM is for the A5000 family" }
+            if model.hasNewIO && (Double(number) ?? 0) < 0.9 { return "it needs RISC OS 3, or ArcLibre 0.9 or later" }
+            return nil
+        }
+        if model.hasNewIO && !version.hasPrefix("RISC OS 3") { return "it needs RISC OS 3" }
+        return nil
     }
 
     /// Writes the ROM as a single image in `directory` (named after its
@@ -294,7 +316,10 @@ public enum ROMImporter {
         let fm = FileManager.default
         try fm.createDirectory(atPath: directory, withIntermediateDirectories: true)
         if let existing = installedPath(sha256: rom.sha256, in: directory) { return existing }
-        let base = String(rom.versionString.map { "/:\\".contains($0) ? "-" : $0 })
+        // A bigger image than its version shipped as is named with its size,
+        // beside the usual one (ArcLibre's 4 MB ROM by its 2 MB one).
+        var base = String(rom.versionString.map { "/:\\".contains($0) ? "-" : $0 })
+        if rom.data.count > expectedSize(rom.versionString) { base += " \(rom.data.count >> 20) MB" }
         var path = (directory as NSString).appendingPathComponent(base + ".rom")
         if fm.fileExists(atPath: path) { path = (directory as NSString).appendingPathComponent("\(base) \(rom.sha256.prefix(8)).rom") }
         try HostFiles.write(Data(rom.data), to: path)

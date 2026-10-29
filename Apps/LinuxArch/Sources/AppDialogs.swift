@@ -43,7 +43,7 @@ enum AboutDialog {
         adw_about_dialog_add_legal_section(about, "RISC OS",
             "Acorn’s RISC OS ROMs are copyright; they’re not included, and not covered by the GPL.",
             GTK_LICENSE_CUSTOM, nil)
-        if AppPaths.resource("ArcLibre/ArcLibre.rom") != nil {
+        if !AppSettings.bundledArcLibre(withExtension: "rom").isEmpty {
             adw_about_dialog_add_legal_section(about, "ArcLibre",
                 "ArcLibre, a free ROM restored from Acorn’s publicly released RISC OS sources, is included. Its floating point emulator carries ARM Limited’s BSD notice, and its Squash compressor a BSD notice.",
                 GTK_LICENSE_APACHE_2_0, nil)

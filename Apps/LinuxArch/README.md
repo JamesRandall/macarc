@@ -32,9 +32,12 @@ make test                         # the core's tests, then the agent tools'
 ```
 
 The installed programs carry the Swift runtime (`--static-swift-stdlib`), so
-they need only the system's libraries. `make install` includes ArcLibre when
-`Apps/MacArch/Resources/ArcLibre/ArcLibre.rom` is present (it's git-ignored,
-as for the Mac build); without it, the first window asks for a ROM. The same
+they need only the system's libraries. `make install` includes ArcLibre (its
+2 MB and 4 MB ROMs and the 2 MB ROM's extras disc, which Disc ▸ Insert
+ArcLibre Extras Disc puts in) when `Apps/MacArch/Resources/ArcLibre` has them
+(they're git-ignored, as for the Mac build; `scripts/update-arclibre.sh`
+copies them from an ArcLibre release); without them, the first window asks
+for a ROM. The same
 goes for Acorn's Level 4 File Server disc (`Apps/MacArch/Resources/Level4.adf`):
 without it, the Network Studio sets a file server up from a Level 4 disc image
 you choose. The Game Library's catalogue and covers come from

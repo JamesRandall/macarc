@@ -89,7 +89,12 @@ All in `Sources/ArchimedesWasm/Exports.swift`; `web/src/arc-wasm.js` wraps it.
 - **Time:** `arc_run(h, ticks)` runs that many 24 MHz ticks (at most 10 guest
   seconds a call). Nothing advances between calls. `arc_ticks`, `arc_frame_count`, `arc_pc`.
 - **Input:** `arc_key(h, code, down)` (Archimedes key matrix codes, 0x70–0x72 the
-  mouse buttons), `arc_mouse_move(h, dx, dy)`, `arc_release_keys(h)`. Input
+  mouse buttons), `arc_mouse_move(h, dx, dy)`, `arc_release_keys(h)`.
+  `arc_follow_pointer(h, active, x, y, dx, dy)` follows the host's pointer
+  instead of capturing it (the app's Follow the Mac pointer): RISC OS's
+  pointer is steered to (x, y) in frame pixels, kept to the display area, and
+  while it's off (dx, dy) goes as counts; `active` 0 stops. It returns 1 when
+  the host can hide its own pointer there. Input
   takes effect at the current guest time, between runs.
 - **Media:** `arc_insert_floppy(h, drive, p, n, wp)`, `arc_eject_floppy`,
   `arc_floppy_contents` (writes included; nothing is written back anywhere).

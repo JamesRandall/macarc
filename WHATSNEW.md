@@ -9,6 +9,12 @@ release's section for the GitHub release and Sparkle's update window, and
 won't build a release without one.
 -->
 
+## 0.4.1
+
+- **ArcLibre 0.9:** the free RISC OS that comes with MacArch is now [ArcLibre 0.9](https://github.com/acorn-playground/arclibre), in both its forms, replacing 0.8. The **2 MB ROM** runs on every model, the A5000 family included; the **4 MB ROM** has DOSFS, Alarm and printing built in, and is for the A5000, A3010, A3020 and A4000, whose sockets take it. Both join the ROM list, named with their sizes.
+- **ArcLibre's extras disc:** File ▸ Insert ArcLibre Extras Disc puts in the disc that goes with the 2 MB ROM, with DOSFS, !Alarm and !Printers. It's a copy kept in MacArch's own folder, so you can save changes to it.
+- **ROMs that suit the model:** changing model swaps a ROM that can't drive it for one that can, keeping to ArcLibre if that's what you were using (or RISC OS 3 for 2).
+
 ## 0.4.0
 
 - **ArcLibre included:** MacArch now comes with [ArcLibre](https://github.com/acorn-playground/ArcLibre), a free RISC OS for the Archimedes rebuilt from Acorn's public sources, so it switches on straight away without finding a ROM. Add Acorn's RISC OS 2 or 3 as before; they become the default when you do.

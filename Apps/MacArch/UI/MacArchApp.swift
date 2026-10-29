@@ -31,6 +31,12 @@ struct MacArchApp: App {
                     .keyboardShortcut("o")
                     .disabled(machine?.host == nil)
                 RecentDiscsMenu(machine: machine)
+                if !(Bundle.main.urls(forResourcesWithExtension: "adf", subdirectory: "ArcLibre") ?? []).isEmpty {
+                    Button("Insert ArcLibre Extras Disc") {
+                        if let disc = AppSettings.shared.arcLibreExtrasDisc { machine?.insertDisc(disc) }
+                    }
+                    .disabled(machine?.host == nil)
+                }
                 Divider()
                 Button("Save Disc Changes") { machine?.saveDisc() }
                     .keyboardShortcut("s", modifiers: [.command, .control])
@@ -333,7 +339,7 @@ struct HardwarePickers: View {
         // does nothing), so the picker and Add ROMs… share a submenu.
         Menu("ROM") {
             Picker("ROM", selection: Binding(get: { machine?.romPath ?? "" }, set: { machine?.setHardware(romPath: $0) })) {
-                ForEach(AppSettings.shared.romLibrary) { Text($0.version).tag($0.path) }
+                ForEach(AppSettings.shared.romLibrary) { Text(AppSettings.shared.label($0)).tag($0.path) }
             }
             .pickerStyle(.inline)
             .labelsHidden()

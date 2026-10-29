@@ -152,4 +152,48 @@ final class EmbeddedMachineTests: XCTestCase {
         }
         XCTAssertTrue(m.classicStarted)
     }
+
+    /// The bundled ArcLibre 4 MB ROM, which the browser runs on an A5000.
+    static let arcLibre4MBPath: String? = {
+        let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../Apps/MacArch/Resources/ArcLibre").standardized
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        return names.first { $0.hasSuffix("-4mb.rom") }.map { dir.appendingPathComponent($0).path }
+    }()
+
+    /// Following the host's pointer: RISC OS's goes where it's sent, and
+    /// stays inside the display area.
+    func testFollowPointerSteersRISCOSPointer() throws {
+        guard let path = Self.arcLibre4MBPath, let rom = FileManager.default.contents(atPath: path) else {
+            throw XCTSkip("needs ArcLibre's 4 MB ROM in Apps/MacArch/Resources/ArcLibre")
+        }
+        let m = try EmbeddedMachine(model: "A5000", ramKB: 4096, rom: [UInt8](rom))
+        let second = UInt64(EmbeddedMachine.ticksPerSecond)
+        for _ in 0..<25 { try m.run(ticks: second) }
+        XCTAssertTrue(m.machine.vidc.pointerShown, "the desktop's pointer is on")
+        guard let d = m.machine.vidc.lastFrame.displayArea else { return XCTFail("no display area") }
+        let spots = [(d.x + 20, d.y + 20), (d.x + d.width - 30, d.y + d.height - 30), (d.x + d.width / 2, d.y + d.height / 2),
+                     (d.x + d.width / 2 + 3, d.y + d.height / 2 - 2)]
+        for (x, y) in spots {
+            XCTAssertTrue(m.followPointer(to: (x, y)), "\(x), \(y) is in the display area")
+            try m.run(ticks: second / 2)
+            let p = m.machine.vidc.pointerHotspot
+            XCTAssertLessThanOrEqual(abs(p.x - x), 1, "sent to \(x), \(y); it's at \(p.x), \(p.y)")
+            XCTAssertLessThanOrEqual(abs(p.y - y), 1, "sent to \(x), \(y); it's at \(p.x), \(p.y)")
+        }
+        // In the border, it waits at the edge.
+        XCTAssertFalse(m.followPointer(to: (d.x - 10, d.y + 40)), "the border isn't the display area")
+        try m.run(ticks: second / 2)
+        let p = m.machine.vidc.pointerHotspot
+        XCTAssertLessThanOrEqual(abs(p.x - d.x), 1, "held at the left edge; it's at \(p.x)")
+        // Snapshots keep following.
+        let state = m.saveState()
+        try m.restoreState(state)
+        m.followPointer(to: (d.x + 60, d.y + 60))
+        try m.run(ticks: second / 2)
+        let q = m.machine.vidc.pointerHotspot
+        XCTAssertLessThanOrEqual(abs(q.x - (d.x + 60)), 1, "after a restore; it's at \(q.x), \(q.y)")
+        XCTAssertLessThanOrEqual(abs(q.y - (d.y + 60)), 1, "after a restore; it's at \(q.x), \(q.y)")
+        m.followPointer(to: nil)
+    }
 }

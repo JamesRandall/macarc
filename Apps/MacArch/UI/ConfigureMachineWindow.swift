@@ -139,8 +139,8 @@ struct ConfigureMachineWindow: View {
         d.cpu = s.cpu(for: m)
         d.ramKB = s.ramKB(for: m)
         d.monitor = s.monitor(for: m)
-        if !romSuits(d.romPath, m), let other = AppSettings.shared.romLibrary.last(where: { romSuits($0.path, m) }) {
-            d.romPath = other.path
+        if !romSuits(d.romPath, m), let other = AppSettings.shared.preferredROM(for: m, like: d.romPath) {
+            d.romPath = other
         }
         draft = d
     }
@@ -213,7 +213,8 @@ struct ConfigureMachineWindow: View {
                     let detail = ROMLibrary.shared.detail(for: entry.path)
                     let suits = romSuits(entry.path, draft.model)
                     ChoiceCard(symbol: "square.stack.3d.up", title: entry.version, subtitle: nil,
-                               detail: suits ? (detail?.known != nil ? "A known good dump." : "Recognised.") : "Not for the \(draft.model.rawValue): it needs RISC OS 3.",
+                               detail: suits ? (detail?.known != nil ? "A known good dump." : "Recognised.")
+                                   : "Not for the \(draft.model.rawValue): \(detail?.whyNot(draft.model) ?? "it can't be read").",
                                badges: detail.map { [.init($0.sizeKB >= 1024 ? "\($0.sizeKB / 1024) MB" : "\($0.sizeKB) KB", .secondary)] } ?? [],
                                selected: draft.romPath == entry.path, fitted: current.romPath == entry.path) { draft.romPath = entry.path }
                         .disabled(!suits)

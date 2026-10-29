@@ -325,6 +325,9 @@ final class MachineWindow {
         let menu = Menu()
         menu.section { section in
             section.item("Open Disc…", "win.open-disc")
+            if !AppSettings.bundledArcLibre(withExtension: "adf").isEmpty {
+                section.item("Insert ArcLibre Extras Disc", "win.arclibre-extras")
+            }
             section.submenu("Open Recent") { submenu in
                 g_menu_append_section(submenu.pointer, nil, recentMenu.model)
                 submenu.section { $0.item("Clear Menu", "win.clear-recent") }
@@ -494,7 +497,7 @@ final class MachineWindow {
         romMenu.removeAll()
         romMenu.section { section in
             for rom in AppSettings.shared.romLibrary {
-                section.item(rom.version, "win.rom", string: rom.path)
+                section.item(AppSettings.shared.label(rom), "win.rom", string: rom.path)
             }
         }
         romMenu.section { $0.item("Add ROMs…", "win.add-roms") }
@@ -542,6 +545,10 @@ final class MachineWindow {
         let machine = machine
         let actions = actions!
         actions.add("open-disc") { machine.openDisc() }
+        actions.add("arclibre-extras") {
+            guard let disc = AppSettings.shared.arcLibreExtrasDisc else { return }
+            Task { @MainActor in await machine.insertDisc(disc) }
+        }
         actions.add("open-recent", string: { path in
             Task { @MainActor in await machine.insertDisc(URL(fileURLWithPath: path)) }
         })
@@ -647,7 +654,7 @@ final class MachineWindow {
 
     /// The actions that need a running machine.
     private static let machineActions = [
-        "open-disc", "open-recent", "new-disc", "save-disc", "save-disc-as", "eject-disc", "screenshot", "copy-screenshot",
+        "open-disc", "arclibre-extras", "open-recent", "new-disc", "save-disc", "save-disc-as", "eject-disc", "screenshot", "copy-screenshot",
         "paste-text", "save-state", "load-state", "quick-save", "quick-load", "pause", "full-speed", "reset", "power-cycle",
         "capture-mouse", "rewind", "timeline", "zoom", "actual-size", "zoom-in", "zoom-out", "widescreen", "export-configuration",
         "record", "debugger", "debug-break", "disc-contents",

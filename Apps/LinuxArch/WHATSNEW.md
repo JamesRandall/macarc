@@ -7,6 +7,12 @@ line of introduction if wanted, then "- " bullets. Inline Markdown is fine.
 The app shows the sections since the version a user last ran.
 -->
 
+## 0.4.1 — 29 October 2026
+
+- **ArcLibre 0.9:** the free RISC OS that comes with LinuxArch is now [ArcLibre 0.9](https://github.com/acorn-playground/arclibre), in both its forms, replacing 0.8. The **2 MB ROM** runs on every model, the A5000 family included; the **4 MB ROM** has DOSFS, Alarm and printing built in, and is for the A5000, A3010, A3020 and A4000, whose sockets take it. Both join the ROM list, named with their sizes.
+- **ArcLibre's extras disc:** Disc ▸ Insert ArcLibre Extras Disc puts in the disc that goes with the 2 MB ROM, with DOSFS, !Alarm and !Printers. It's a copy kept in LinuxArch's own folder, so you can save changes to it.
+- **ROMs that suit the model:** changing model swaps a ROM that can't drive it for one that can, keeping to ArcLibre if that's what you were using (or RISC OS 3 for 2).
+
 ## 0.4.0 — 29 October 2026
 
 The first release: MacArch's Archimedes, as a GTK4 and libadwaita app.

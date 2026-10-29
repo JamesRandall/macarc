@@ -66,6 +66,8 @@ public final class EmbeddedMachine {
     public private(set) var frameScaleY = 1
 
     private let audio = AudioCollector()
+    /// Steers RISC OS's pointer to the host's (`followPointer`).
+    private let follower = PointerFollower()
 
     /// - Parameters:
     ///   - model: a `MachineModel` raw value ("A3000", "A5000"...).
@@ -84,7 +86,16 @@ public final class EmbeddedMachine {
         if ramKB != 0 { c.ramKB = ramKB }
         if cmosReset { c.powerOnKeys = [0x34] }
         do { machine = try Machine(configuration: c, rom: rom) } catch { throw Failure.configuration("\(error)") }
+        attach()
+    }
+
+    /// Sound, and once a frame the keyboard and the pointer follower, as the app's host does.
+    private func attach() {
         machine.vidc.audioSink = audio
+        machine.vidc.frameCompleted = { [unowned m = machine, follower] _ in
+            m.ioc.pumpKeyboard()
+            follower.frame(m)
+        }
     }
 
     // MARK: Time
@@ -128,6 +139,28 @@ public final class EmbeddedMachine {
     /// Mouse movement in mouse counts (up is positive y).
     public func mouseMove(dx: Int, dy: Int) {
         machine.mouseMove(dx: max(-1024, min(1024, dx)), dy: max(-1024, min(1024, dy)))
+    }
+
+    /// Following the host's pointer instead of capturing it (the app's
+    /// "Follow the Mac pointer"): RISC OS's pointer is steered to the spot,
+    /// in frame pixels, kept inside the display area, since it can't go
+    /// into the border. While RISC OS's pointer is off, as in games that
+    /// draw their own, the movement (in counts, +y up) is passed on instead.
+    /// nil stops steering.
+    /// Returns whether RISC OS's pointer is on and the spot was in the display
+    /// area, where the host can hide its own pointer.
+    @discardableResult
+    public func followPointer(to spot: (x: Int, y: Int)?, dx: Int = 0, dy: Int = 0) -> Bool {
+        guard var s = spot else { follower.target = nil; return false }
+        var inside = true
+        if let d = machine.vidc.lastFrame.displayArea {
+            let x = min(max(s.x, d.x), d.x + d.width - 1), y = min(max(s.y, d.y), d.y + d.height - 1)
+            inside = x == s.x && y == s.y
+            s = (x, y)
+        }
+        follower.target = s
+        follower.moveBy(dx: max(-1024, min(1024, dx)), dy: max(-1024, min(1024, dy)), in: machine)
+        return inside && machine.vidc.pointerShown
     }
 
     /// Lets go of every key and button (the host lost focus).
@@ -257,8 +290,9 @@ public final class EmbeddedMachine {
             m = try Machine.restore(snapshot: bytes, rom: rom, resolveDisc: { known[$0.sha256] })
         } catch { throw Failure.snapshot("\(error)") }
         machine.vidc.audioSink = nil
+        machine.vidc.frameCompleted = nil
         machine = m
-        machine.vidc.audioSink = audio
+        attach()
         launcher = nil
         rgbaFrameNumber = .max
     }

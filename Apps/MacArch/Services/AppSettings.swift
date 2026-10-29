@@ -32,7 +32,29 @@ final class AppSettings {
     struct ROMEntry: Hashable, Identifiable {
         var path: String
         var version: String
+        var size: Int
         var id: String { path }
+        func suits(_ m: MachineModel) -> Bool { ROMImporter.whyNot(version: version, size: size, on: m) == nil }
+    }
+
+    /// A ROM's name in a list: its version, with its size when another ROM
+    /// on the list has the same version (ArcLibre's 2 MB and 4 MB ROMs).
+    func label(_ e: ROMEntry) -> String {
+        guard romLibrary.contains(where: { $0.path != e.path && $0.version == e.version }) else { return e.version }
+        return "\(e.version) · \(Self.ramLabel(e.size / 1024))"
+    }
+
+    /// The ROM to use for a model: the newest that suits it, from the same
+    /// family as `like` if one does (ArcLibre stays ArcLibre), the bigger
+    /// of two the same version; nil if none suits.
+    func preferredROM(for m: MachineModel, like path: String? = nil) -> String? {
+        let suiting = romLibrary.filter { $0.suits(m) }
+        let family = path.flatMap { p in romLibrary.first { $0.path == p } }.map { $0.version.prefix { $0 != " " } }
+        let pool = suiting.filter { family == nil || $0.version.hasPrefix(family!) }
+        return (pool.isEmpty ? suiting : pool).max {
+            let order = $0.version.localizedStandardCompare($1.version)
+            return order == .orderedSame ? $0.size < $1.size : order == .orderedAscending
+        }?.path
     }
 
     static func ramLabel(_ kb: Int) -> String { kb < 1024 ? "\(kb) KB" : "\(kb / 1024) MB" }
@@ -120,29 +142,50 @@ final class AppSettings {
         addBundledArcLibre()
         // (Observers don't run in init: saved by hand.)
         if romPath.map({ !FileManager.default.fileExists(atPath: $0) }) ?? true {
-            romPath = romLibrary.max { $0.version.localizedStandardCompare($1.version) == .orderedAscending }?.path
+            romPath = preferredROM(for: model) ?? romLibrary.max { $0.version.localizedStandardCompare($1.version) == .orderedAscending }?.path
             d.set(romPath, forKey: "romPath")
         }
     }
 
     /// ArcLibre, the free ROM rebuilt from RISC OS's public sources, comes
-    /// with MacArch so that it works without one of Acorn's. It joins the
-    /// ROM list (replacing an older ArcLibre MacArch put there) unless it
-    /// was taken off; Acorn's ROMs stay the default when there are any.
+    /// with MacArch (2 MB for any model, 4 MB for the A5000 family) so that
+    /// it works without one of Acorn's. Each joins the ROM list unless it
+    /// was taken off, replacing an earlier release MacArch put there; Acorn's
+    /// ROMs stay the default when there are any.
     private func addBundledArcLibre() {
-        guard let url = Bundle.main.url(forResource: "ArcLibre", withExtension: "rom", subdirectory: "ArcLibre"),
-              let rom = try? ROMImage.load(paths: [url.path]) else { return }
-        if d.stringArray(forKey: "declinedBundledROMs")?.contains(rom.sha256) == true { return }
+        let bundled = (Bundle.main.urls(forResourcesWithExtension: "rom", subdirectory: "ArcLibre") ?? [])
+            .compactMap { try? ROMImage.load(paths: [$0.path]) }
+        guard !bundled.isEmpty else { return }
+        let declined = Set(d.stringArray(forKey: "declinedBundledROMs") ?? [])
         let installed = romLibrary.compactMap { e in (try? ROMImage.load(paths: [e.path])).map { (e, $0.sha256) } }
-        if installed.contains(where: { $0.1 == rom.sha256 }) { return }
         let directory = (Self.supportDirectory as NSString).appendingPathComponent("ROMs")
-        guard let path = try? ROMImporter.install(rom, into: directory) else { return }
-        addROM(path)
-        for (e, _) in installed where e.version.hasPrefix("ArcLibre") && e.path.hasPrefix(directory) {
-            if romPath == e.path { romPath = path; d.set(path, forKey: "romPath") }
+        for rom in bundled where !declined.contains(rom.sha256) && !installed.contains(where: { $0.1 == rom.sha256 }) {
+            if let path = try? ROMImporter.install(rom, into: directory) { addROM(path) }
+        }
+        let current = Set(bundled.map(\.sha256))
+        // Earlier bundled releases go; an ArcLibre added by hand (a build of
+        // your own, say) stays.
+        let shipped = Set(ROMImporter.known.filter { $0.value.title.hasPrefix("ArcLibre") }.keys)
+        for (e, sha) in installed where shipped.contains(sha) && e.path.hasPrefix(directory) && !current.contains(sha) {
+            let replacement = preferredROM(for: model, like: e.path)
             removeROM(e.path)
             try? FileManager.default.removeItem(atPath: e.path)
+            if romPath == e.path { romPath = replacement; d.set(romPath, forKey: "romPath") }
         }
+    }
+
+    /// ArcLibre's extras disc, for its 2 MB ROM (DOSFS, !Alarm and
+    /// !Printers, which the 4 MB ROM has built in): a copy in MacArch's own
+    /// folder, made from the app's the first time, so it can be written to.
+    var arcLibreExtrasDisc: URL? {
+        guard let bundled = Bundle.main.urls(forResourcesWithExtension: "adf", subdirectory: "ArcLibre")?.first else { return nil }
+        let folder = URL(fileURLWithPath: Self.supportDirectory).appendingPathComponent("ArcLibre")
+        let copy = folder.appendingPathComponent(bundled.lastPathComponent)
+        if !FileManager.default.fileExists(atPath: copy.path) {
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            guard (try? FileManager.default.copyItem(at: bundled, to: copy)) != nil else { return nil }
+        }
+        return copy
     }
 
     /// The bundled ArcLibre was taken off the ROM list: don't put it back.
@@ -155,7 +198,7 @@ final class AppSettings {
     func addROM(_ path: String, save: Bool = true) -> String? {
         if let e = romLibrary.first(where: { $0.path == path }) { return e.version }
         guard let rom = try? ROMImage.load(paths: [path]) else { return nil }
-        romLibrary.append(ROMEntry(path: path, version: rom.versionString))
+        romLibrary.append(ROMEntry(path: path, version: rom.versionString, size: rom.data.count))
         romLibrary.sort { $0.version < $1.version }
         if save { d.set(romLibrary.map(\.path), forKey: "romLibrary") }
         return rom.versionString

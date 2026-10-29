@@ -70,8 +70,11 @@ final class ConfigureMachineDialog {
             let index = Int(adw_combo_row_get_selected(modelRow.cast()))
             guard models.indices.contains(index), models[index] != self.draft.model else { return }
             // A model brings back the processor, memory and monitor it last had.
+            // A ROM that can't drive it gives way to one that can.
             let m = models[index], s = AppSettings.shared
-            self.draft = Draft(model: m, cpu: s.cpu(for: m), ramKB: s.ramKB(for: m), monitor: s.monitor(for: m), romPath: self.draft.romPath)
+            let fits = s.romLibrary.first { $0.path == self.draft.romPath }?.suits(m) ?? true
+            let rom = fits ? self.draft.romPath : s.preferredROM(for: m, like: self.draft.romPath) ?? self.draft.romPath
+            self.draft = Draft(model: m, cpu: s.cpu(for: m), ramKB: s.ramKB(for: m), monitor: s.monitor(for: m), romPath: rom)
             self.showChoices()
         }
         onNotify(processorRow, "selected") { [weak self] in
@@ -135,7 +138,7 @@ final class ConfigureMachineDialog {
         UI.setItems(comboRow: monitorRow, d.model.monitorChoices.map(\.displayName),
                     selected: d.model.monitorChoices.firstIndex(of: d.monitor) ?? 0)
         let roms = AppSettings.shared.romLibrary
-        UI.setItems(comboRow: romRow, roms.map(\.version), selected: roms.firstIndex { $0.path == d.romPath } ?? 0)
+        UI.setItems(comboRow: romRow, roms.map(AppSettings.shared.label), selected: roms.firstIndex { $0.path == d.romPath } ?? 0)
         processorRow.setSensitive(d.model.cpuChoices.count > 1)
         monitorRow.setSensitive(d.model.monitorChoices.count > 1)
         draft = d

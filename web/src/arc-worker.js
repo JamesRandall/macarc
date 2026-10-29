@@ -22,6 +22,7 @@ let timer = 0;
 let lastWall = 0;
 let owedTicks = 0;
 let speed = 1;
+let pointerHidden = false; // last told to the page (followPointer)
 let config = null;
 let wasmBytes = 0;
 const stats = { frames: 0, requestedTicks: 0, executedTicks: 0, runMs: [], lastReport: 0 };
@@ -47,6 +48,7 @@ async function loadModule(url) {
 
 /** A new machine from `c`: { rom, model, ramKB, classic?: { game, discs }, discs?: [{ drive, bytes }] }. */
 function build(c) {
+  pointerHidden = false;
   stop();
   if (machine) { machine.release(); machine = null; }
   gen++;
@@ -167,6 +169,11 @@ onmessage = async (e) => {
       case 'speed': speed = m.speed; break;
       case 'key': machine?.key(m.code, m.down); break;
       case 'mouse': machine?.mouseMove(m.dx, m.dy); break;
+      case 'follow': {
+        const hide = machine?.followPointer(m.spot, m.dx, m.dy) ?? false;
+        if (hide !== pointerHidden) { pointerHidden = hide; post('pointer', { hide }); }
+        break;
+      }
       case 'releaseKeys': machine?.releaseKeys(); break;
       case 'insert':
         machine?.insertFloppy(m.bytes, { drive: m.drive ?? 0 });

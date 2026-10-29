@@ -52,10 +52,10 @@ install: app
 	else \
 		echo "(No Apps/MacArch/Resources/Level4.adf: file servers are set up from a Level 4 disc image chosen in the app.)"; \
 	fi
-	@if [ -f $(ARCLIBRE)/ArcLibre.rom ]; then \
+	@if ls $(ARCLIBRE)/*.rom >/dev/null 2>&1; then \
 		install -d $(SHAREDIR)/linuxarch/ArcLibre && install -m 644 $(ARCLIBRE)/* $(SHAREDIR)/linuxarch/ArcLibre/; \
 	else \
-		echo "(No $(ARCLIBRE)/ArcLibre.rom: installing without ArcLibre; add RISC OS from the app.)"; \
+		echo "(No ROM in $(ARCLIBRE): installing without ArcLibre; add RISC OS from the app.)"; \
 	fi
 	install -Dm 644 LICENSE $(SHAREDIR)/licenses/linuxarch/LICENSE
 	@if [ -z "$(DESTDIR)" ]; then \

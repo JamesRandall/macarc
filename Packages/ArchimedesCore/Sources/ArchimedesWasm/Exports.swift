@@ -176,6 +176,19 @@ public func arc_mouse_move(_ h: Int32, _ dx: Int32, _ dy: Int32) -> Int32 {
     with(h) { $0.mouseMove(dx: Int(dx), dy: Int(dy)); return 0 }
 }
 
+/// Follows the host's pointer instead of capturing it: steers RISC OS's
+/// pointer to (x, y) in frame pixels, passing (dx, dy) on as counts while
+/// RISC OS's pointer is off. `active` 0 stops steering. Returns 1 when the
+/// host can hide its own pointer (RISC OS's is on and the spot is in the
+/// display area), else 0.
+@_expose(wasm, "arc_follow_pointer")
+@_cdecl("arc_follow_pointer")
+public func arc_follow_pointer(_ h: Int32, _ active: Int32, _ x: Int32, _ y: Int32, _ dx: Int32, _ dy: Int32) -> Int32 {
+    with(h) { m in
+        m.followPointer(to: active != 0 ? (Int(x), Int(y)) : nil, dx: Int(dx), dy: Int(dy)) ? 1 : 0
+    }
+}
+
 @_expose(wasm, "arc_release_keys")
 @_cdecl("arc_release_keys")
 public func arc_release_keys(_ h: Int32) -> Int32 { with(h) { $0.releaseAllKeys(); return 0 } }

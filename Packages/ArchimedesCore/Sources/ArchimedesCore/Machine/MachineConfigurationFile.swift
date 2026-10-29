@@ -61,8 +61,8 @@ public enum MachineConfigurationFile {
         c.cmosPath = sidecar.lastPathComponent
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(c)
-        try Data(cmos).write(to: sidecar, options: .atomic)
-        do { try data.write(to: url, options: .atomic) }
+        try HostFiles.write(Data(cmos), to: sidecar.path)
+        do { try HostFiles.write(data, to: url.path) }
         catch { try? FileManager.default.removeItem(at: sidecar); throw error }
     }
 }

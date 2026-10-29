@@ -353,7 +353,7 @@ enum PreferencesDialog {
                 if settings.romPath == rom.path {
                     suffixes.insert(UI.label("New windows", classes: ["dim-label", "caption"]), at: 0)
                 }
-                let row = UI.actionRow(rom.version, subtitle: notes.joined(separator: " · "), suffixes: suffixes)
+                let row = UI.actionRow(settings.label(rom), subtitle: notes.joined(separator: " · "), suffixes: suffixes)
                 return row
             }
             if rows.isEmpty {

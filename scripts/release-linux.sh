@@ -15,9 +15,9 @@
 # Each architecture builds in an Ubuntu 26.04 container
 # (Apps/LinuxArch/docker/Dockerfile); on Apple silicon, amd64 runs under
 # emulation (Rosetta), so it's slower. The container builds a copy, in
-# build/linux-src, of the files git tracks plus ArcLibre and the Level 4 disc
-# (which git ignores), so nothing else in the tree (ROMs, disc images) goes
-# in. (It's copied here rather than in the container: Ubuntu's tar opens files
+# build/linux-src, of the files git tracks plus ArcLibre's ROMs and extras
+# disc and the Level 4 disc (which git ignores), so nothing else in the tree
+# (Acorn's ROMs, disc images) goes in. (It's copied here rather than in the container: Ubuntu's tar opens files
 # with openat2, which Rosetta lacks.) Swift's build folder is kept in a Docker
 # volume for each architecture, macarch-linux-build-ARCH, so later builds are
 # quicker; `docker volume rm` them to start afresh. Each package is then
@@ -40,7 +40,7 @@ NOTES=$(awk -v v="$VERSION" '
 
 docker info >/dev/null 2>&1 || { echo "release-linux: Docker isn't running" >&2; exit 1; }
 
-EXTRAS="Apps/MacArch/Resources/ArcLibre/ArcLibre.rom Apps/MacArch/Resources/Level4.adf"
+EXTRAS="$(ls Apps/MacArch/Resources/ArcLibre/*.rom Apps/MacArch/Resources/ArcLibre/*.adf) Apps/MacArch/Resources/Level4.adf"
 for extra in $EXTRAS; do
     [ -f "$extra" ] || { echo "release-linux: $extra is missing" >&2; exit 1; }
 done
@@ -74,7 +74,7 @@ for arch in $ARCHS; do
     docker run --rm --platform "linux/$arch" -v "$OUT:/out:ro" ubuntu:26.04 sh -c "
         apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /out/linuxarch_${VERSION}_$arch.deb >/dev/null &&
         ldd /usr/lib/linuxarch/linuxarch /usr/lib/linuxarch/macarch-mcp /usr/lib/linuxarch/macarch-cli | grep 'not found' && exit 1;
-        macarch-cli rom-info /usr/share/linuxarch/ArcLibre/ArcLibre.rom | grep -q ArcLibre"
+        for rom in /usr/share/linuxarch/ArcLibre/*.rom; do macarch-cli rom-info \$rom | grep -q ArcLibre || exit 1; done"
 done
 
 echo "Built LinuxArch $VERSION in $OUT"

@@ -153,7 +153,7 @@ struct ROMListView: View {
                     .foregroundStyle(selected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(d?.version ?? entry.version).font(.body.weight(.medium))
+                        Text(d == nil ? entry.version : settings.label(entry)).font(.body.weight(.medium))
                         TrustBadge(known: d?.known).font(.caption)
                     }
                     Text(caption(d, unsuitable: unsuitable))
@@ -185,8 +185,9 @@ struct ROMListView: View {
         guard let d else { return "Can't be read: the file has moved or changed" }
         var parts = [d.sizeKB >= 1024 ? "\(d.sizeKB / 1024) MB" : "\(d.sizeKB) KB"]
         parts.append(d.known != nil ? "Known good dump" : "Recognised")
-        if unsuitable, let m = model { parts.append("Not for the \(m.displayName): it needs RISC OS 3") }
+        if unsuitable, let m = model, let why = d.whyNot(m) { parts.append("Not for the \(m.displayName): \(why)") }
         else if d.models.count == MachineModel.allCases.count { parts.append("Every model") }
+        else if d.models.allSatisfy(\.hasNewIO) { parts.append("A5000, A3010, A3020, A4000") }
         else { parts.append("300 and 400 series, A540, A3000") }
         return parts.joined(separator: " · ")
     }
@@ -316,7 +317,7 @@ struct WelcomeView: View {
 
     private var startHint: String {
         guard let d = selectedDetail else { return "Add a ROM to switch on." }
-        if !d.models.contains(machine.model) { return "The \(machine.model.displayName) needs RISC OS 3: choose another ROM or model." }
+        if let why = d.whyNot(machine.model) { return "Not for the \(machine.model.displayName): \(why). Choose another ROM or model." }
         return "Starts the \(machine.model.displayName) with \(d.version). The first boot resets CMOS to RISC OS's defaults; after that your settings are kept."
     }
 

@@ -238,7 +238,7 @@ final class NetworkInspectorView {
             session.setSetup(id, s)
         }
         let roms = AppSettings.shared.romLibrary
-        let rom = picker(roms.map(\.version), selected: roms.firstIndex { $0.path == session.romPath(for: setup) } ?? 0) { index in
+        let rom = picker(roms.map(AppSettings.shared.label), selected: roms.firstIndex { $0.path == session.romPath(for: setup) } ?? 0) { index in
             var s = setup
             s.rom = roms[index].version
             session.setSetup(id, s)

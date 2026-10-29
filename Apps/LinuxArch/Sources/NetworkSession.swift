@@ -337,7 +337,7 @@ final class NetworkSession: StationOwner {
 
     static func romPath(for setup: StationSetup) -> String? {
         let library = AppSettings.shared.romLibrary
-        let usable = library.filter { !(setup.model.hasNewIO && $0.version.hasPrefix("RISC OS 2")) }
+        let usable = library.filter { $0.suits(setup.model) }
         if let wanted = setup.rom, let entry = usable.first(where: { $0.version.hasPrefix(wanted) }) { return entry.path }
         if let path = AppSettings.shared.romPath, usable.contains(where: { $0.path == path }) || library.isEmpty { return path }
         return usable.first?.path ?? AppSettings.shared.romPath

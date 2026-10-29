@@ -2,33 +2,51 @@ import XCTest
 @testable import ArchimedesCore
 
 /// ArcLibre, the free ROM MacArch ships so that it works without one of
-/// Acorn's: it's recognised for what it is, and it starts the desktop.
+/// Acorn's, in its 2 MB and 4 MB forms: each is recognised for what it is,
+/// offered for the machines it suits, and starts the desktop on them.
 final class ArcLibreTests: XCTestCase {
-    static let path = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        .appendingPathComponent("../../../../Apps/MacArch/Resources/ArcLibre/ArcLibre.rom").standardized.path
+    static let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        .appendingPathComponent("../../../../Apps/MacArch/Resources/ArcLibre").standardized
+    static let path = folder.appendingPathComponent("arclibre-0.9-2mb.rom").path
+    static let fourMegabytePath = folder.appendingPathComponent("arclibre-0.9-4mb.rom").path
 
-    func testItIsRecognised() throws {
-        let rom = try ROMImage.load(paths: [Self.path])
-        XCTAssertTrue(rom.versionString.hasPrefix("ArcLibre 0."), rom.versionString)
-        XCTAssertNotNil(ROMImporter.known[rom.sha256], "the bundled ArcLibre is a known ROM")
-        XCTAssertTrue(ROMImporter.hasVersion(rom))
-        XCTAssertNotNil(ROMImporter.recognise([rom.data], sources: [Self.path]), "it can be added as a ROM file")
-        let models = ROMImporter.models(for: rom)
-        XCTAssertTrue(models.contains(.a3000) && models.contains(.a440))
-        XCTAssertFalse(models.contains(.a5000), "it has no drivers for the A5000 family")
+    func testTheyAreRecognised() throws {
+        for (path, size) in [(Self.path, 2 << 20), (Self.fourMegabytePath, 4 << 20)] {
+            let rom = try ROMImage.load(paths: [path])
+            XCTAssertTrue(rom.versionString.hasPrefix("ArcLibre 0.9"), rom.versionString)
+            XCTAssertEqual(rom.data.count, size)
+            XCTAssertEqual(ROMImporter.known[rom.sha256]?.title, "ArcLibre 0.9", "the bundled ArcLibre is a known ROM")
+            XCTAssertTrue(ROMImporter.hasVersion(rom))
+            XCTAssertNotNil(ROMImporter.recognise([rom.data], sources: [path]), "it can be added as a ROM file")
+        }
     }
 
-    func testItStartsTheDesktop() throws {
-        for (model, cpu) in [(MachineModel.a3000, CPUType.arm2), (.a440, .arm2), (.a310, .arm3)] {
+    /// The 2 MB ROM drives every model; the 4 MB one only the A5000 family,
+    /// whose sockets take it; 0.8 had no drivers for that family.
+    func testTheModelsTheySuit() throws {
+        XCTAssertEqual(ROMImporter.models(for: try ROMImage.load(paths: [Self.path])), MachineModel.allCases)
+        XCTAssertEqual(ROMImporter.models(for: try ROMImage.load(paths: [Self.fourMegabytePath])), MachineModel.allCases.filter(\.hasNewIO))
+        let old = ROMImporter.models(version: "ArcLibre 0.80 (28 Oct 2026)", size: 2 << 20)
+        XCTAssertEqual(old, MachineModel.allCases.filter { !$0.hasNewIO })
+        XCTAssertNotNil(ROMImporter.whyNot(version: "ArcLibre 0.90 (29 Oct 2026)", size: 4 << 20, on: .a3000))
+    }
+
+    func testTheyStartTheDesktop() throws {
+        let runs: [(String, MachineModel, CPUType)] = [
+            (Self.path, .a3000, .arm2), (Self.path, .a440, .arm2), (Self.path, .a310, .arm3), (Self.path, .a5000, .arm3),
+            (Self.fourMegabytePath, .a5000, .arm3), (Self.fourMegabytePath, .a3010, .arm250),
+        ]
+        for (path, model, cpu) in runs {
             var c = MachineConfiguration(model: model)
-            c.romPaths = [Self.path]
+            c.romPaths = [path]
             c.cpu = cpu
             c.powerOnKeys = [0x34] // Delete: CMOS defaults, as the app does on a first boot
             let m = try Machine(configuration: c)
             m.powerOn()
             var seconds = 0.0
             while seconds < 120 && !(Self.desktopIsUp(m) && m.vidc.pointerShown) { m.run(seconds: 1); seconds += 1 }
-            XCTAssertTrue(Self.desktopIsUp(m) && m.vidc.pointerShown, "\(model.rawValue) \(cpu): no desktop after \(seconds) s")
+            XCTAssertTrue(Self.desktopIsUp(m) && m.vidc.pointerShown,
+                          "\((path as NSString).lastPathComponent) on the \(model.rawValue) \(cpu): no desktop after \(seconds) s")
         }
     }
 

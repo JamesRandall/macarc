@@ -410,8 +410,12 @@ final class MachineController {
                           romPath: hw.romPath, hardDiscs: [])
         } else if let newModel, newModel != hw.model {
             let s = AppSettings.shared
+            // A ROM that can't drive the new model gives way to one that can
+            // (ArcLibre's 2 MB and 4 MB ROMs, or RISC OS 2 for 3).
+            let fits = s.romLibrary.first { $0.path == hw.romPath }?.suits(newModel) ?? true
             hw = Hardware(model: newModel, cpu: s.cpu(for: newModel), ramKB: s.ramKB(for: newModel), monitor: s.monitor(for: newModel),
-                          romPath: hw.romPath, hardDiscs: s.hardDiscs(for: newModel))
+                          romPath: fits || newROM != nil ? hw.romPath : s.preferredROM(for: newModel, like: hw.romPath) ?? hw.romPath,
+                          hardDiscs: s.hardDiscs(for: newModel))
         }
         if let newCPU { hw.cpu = newCPU }
         if let newMonitor { hw.monitor = newMonitor }

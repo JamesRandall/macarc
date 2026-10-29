@@ -29,6 +29,8 @@ final class ROMLibrary {
         var models: [MachineModel]
         /// A copy MacArch keeps (rather than a file elsewhere it points at).
         var isCopy: Bool
+        /// Why it can't drive a model, or nil if it can.
+        func whyNot(_ m: MachineModel) -> String? { ROMImporter.whyNot(version: version, size: sizeKB * 1024, on: m) }
     }
 
     private(set) var outcomes: [Outcome] = []

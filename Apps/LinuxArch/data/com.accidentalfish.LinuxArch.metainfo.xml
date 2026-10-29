@@ -56,6 +56,11 @@
     <mediatype>application/x-macarch-state</mediatype>
   </provides>
   <releases>
+    <release version="0.4.1" date="2026-10-29">
+      <description>
+        <p>ArcLibre 0.9, the free RISC OS, in its 2 MB form for every model and its 4 MB form for the A5000 family, with its extras disc.</p>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-10-29">
       <description>
         <p>The first release: MacArch's Archimedes, on Linux.</p>

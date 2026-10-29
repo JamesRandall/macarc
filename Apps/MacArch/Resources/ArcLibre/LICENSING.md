@@ -6,7 +6,9 @@ The restored RISC OS kernel and most guest modules in this project come from **p
 
 The implementation baseline is the public **cleaned RISC OS 3.60 source import** preserved in the component Git repositories under [RiscOS/Sources on the 4corn GitLab mirror](https://gitlab.4corn.co.uk/RiscOS/Sources). The historical kernel/cohort commits are described upstream as “Import from cleaned 360 CD”. We exported selected revisions from those repositories and restored their original-machine paths for ARM2/MEMC1 hardware.
 
-“Recovered” means recovered from those public version-control histories. It does **not** mean disassembled from a ROM or copied from a commercial ROM image. The maintained `src/` tree contains our patched copies. The original snapshots, manifests and restoration evidence remain in `experiments/`.
+> **A note on the 4corn mirror.** Every RISC OS source repository cited in this document and in `manifests/` is on the 4corn mirror of RISC OS Open's GitLab, because the canonical RISC OS Open GitLab is currently offline. When it is back online we will rebase the provenance on it: each pinned revision is a Git commit hash, which is the same in the mirror and the original, so the move changes the repository addresses and re-verifies every pinned file against them, not the sources.
+
+"Recovered" means recovered from those public version-control histories. It does **not** mean disassembled from a ROM or copied from a commercial ROM image. The maintained `src/` tree contains our patched copies. How they were restored is recorded in [docs/history](docs/history/README.md); the original snapshots and full restoration evidence are kept in the project's development archive, not in this repository.
 
 The core source references are:
 
@@ -52,13 +54,13 @@ New project restoration code, build scripts, test harnesses and original diagnos
 
 | Host dependency | Terms and source | Relationship to the guest ROM |
 |---|---|---|
-| AsAsm and observation patches | [Pinned GCCSDK source](https://github.com/riscos-dot-info/gccsdk/tree/212d4567f007e7d30f4af3d6e1919a3d8a115b1c/tools/asasm), GPL-2.0-or-later; source archive and patches in `third_party/` | Produces/verifies ARM objects; no host assembler code is joined into the ROM |
+| AsAsm, observation and host-portability patches | [Pinned GCCSDK source](https://github.com/riscos-dot-info/gccsdk/tree/212d4567f007e7d30f4af3d6e1919a3d8a115b1c/tools/asasm), GPL-2.0-or-later; source archive and patches in `third_party/` | Produces/verifies ARM objects; no host assembler code is joined into the ROM |
 | ELF toolchain / decaof | Same pinned archive; retain its per-file BSD-style and other supplied notices | Host object-file support |
 | Tokenise | Public Tools/Sources/tokenise revision `d6ea854482663935562dc4c1bc2cde4bf3b570aa`; [source licence](third_party/tokenise/LICENSE), Apache-2.0 | Generates help text from identified public inputs |
 | GNU M4, Autoconf, Automake and Libtool | Their own COPYING files, notices and applicable exceptions; versions/archive hashes in [toolchain manifest](manifests/toolchain.json) | Host build infrastructure |
-| MacArch | Separate GPL-3.0-or-later host dependency; [licence](licenses/MacArch-GPL3), pinned core source archive and [device patch](third_party/patches/macarch-original-disc-change.patch) | Executes the ROM for tests; neither core nor native harness executable is joined into it |
+| MacArch | Separate GPL-3.0-or-later host dependency; [licence](licenses/MacArch-GPL3), pinned core source archive, [device patch](third_party/patches/macarch-original-disc-change.patch) and non-macOS [host-portability patch](third_party/patches/macarch-portable-host.patch) | Executes the ROM for tests; neither core nor native harness executable is joined into it |
 
-The bundled archives contain source, not prebuilt host executables. If native GPL-covered tools or combined test executables are distributed later, their applicable source and notice requirements must also be met. Apple Clang/macOS SDK are installed developer prerequisites, not bundled guest components.
+The bundled archives contain source, not prebuilt host executables. If native GPL-covered tools or combined test executables are distributed later, their applicable source and notice requirements must also be met. Apple Clang/macOS SDK, and on Linux Clang, Bison, flex and zlib, are installed developer prerequisites, not bundled guest components.
 
 Do not add proprietary ROM images, resources extracted from them, or commercial application/disc payloads. Preserve original attribution and document the provenance of each new source or asset.
 
@@ -239,9 +241,11 @@ Apache-2.0 release. No ROM extract, commercial application resource, substitute
 font or proprietary C-library binary is included. FilerSWIs has no separate
 resource payload.
 
-The additional host compiler is public GCCSDK 3.4.6, pinned in
-`manifests/c-toolchain.json`. Its selected host source archive, original per-component notices and
-local patches are retained; the unused restricted CMunge directory is excluded. The [toolchain report](docs/desktop-c/TOOLCHAIN.md)
+The additional host compiler is public GCCSDK 3.4.6, from the
+[gcc-apcs26](https://github.com/acorn-playground/gcc-apcs26) project (the git
+submodule `third_party/gcc-apcs26`, pinned in `manifests/c-toolchain.json`).
+Its selected host source archive, original per-component notices and
+patches are retained there; the unused restricted CMunge directory is excluded. The [toolchain report](docs/desktop-c/TOOLCHAIN.md)
 distinguishes host adaptations from the ROM-library data-placement fix.
 GCCSDK target libraries are not linked into the ROM: the guest uses the real
 original SharedCLibrary plus ArcLibre-authored division ABI adapters. These
@@ -424,7 +428,7 @@ the host from project-authored data.
 The historical GCCSDK archive contained CMunge 0.76 under its own restrictive
 `Docs/Copyright`, not the compiler's GPL. It was not used to generate this ROM.
 The replacement host source archive excludes all 57 files in that directory
-and the bootstrap omits the utility. The [selection manifest](manifests/c-toolchain-selection.json)
+and the bootstrap omits the utility. The [selection manifest](third_party/gcc-apcs26/sources/selection.json)
 records exact provenance; retained files keep their individual notices. Earlier
 source packages containing the whole archive must not be described as uniformly
 GPL or unrestricted. This change does not change or relicense the ROM.
@@ -484,6 +488,20 @@ from their cleaned-3.60 HWSupport repositories at the revisions in
 notices; ArcLibre's ARM2/IOC changes, including Podule's RISC OS 3.11 wording,
 are in `patches/hardware` and marked in each modified file.
 
+## Printing disc
+
+!Printers (PrinterManager, with its dot-matrix, LaserJet and PostScript
+classes, PostScript prologues and encodings), PDriver, PDriverDP and PDriverPS
+(PDModules), PDumperSupport, PDumperDM and PDumperLJ (PDumpers),
+`Hdr:PDriverReg`/`Hdr:PDumperReg`, `Hdr:MakePSFont` (MakePSFont; header only)
+and the Epson FX-80, Apple LaserWriter and HP LaserJet II printer definitions
+(PrintDefs) come from their Apache-2.0 repositories at the
+revisions in `manifests/printing-inputs.json`. They keep their LICENSE files
+and notices; ArcLibre's changes are in `patches/printing` and marked in each
+modified file. `src/ArcLibre/hdr/SprExtend` and `src/ArcLibre/printing/ReadMe`
+are new ArcLibre files. !Printers' BASIC is built with the C preprocessor and
+the ROM's own BASIC; Acorn's proprietary squish is not used.
+
 ## ArcLibre ARM3Support
 
 `src/ARM3Support` is new Apache-2.0 ArcLibre code implementing the documented
@@ -527,7 +545,9 @@ the generated bytes are build output, not committed. Alarm's wrapper carries a
 modification notice. Alarm is distributed on its own floppy
 (`arclibre-alarm.adf`, `tools/build_alarm_disc.py`) rather than in the ROM; the
 disc's ReadMe (`src/ArcLibre/alarm/ReadMe`) is new ArcLibre text under
-Apache-2.0. Tokenisation is their source representation;
+Apache-2.0. Releases ship it, with DOSFS and printing, on the 2 MB ROM's one
+extras floppy (`tools/build_extras_disc.py`), whose ReadMe
+(`src/ArcLibre/extras/ReadMe`) is also new ArcLibre text under Apache-2.0. Tokenisation is their source representation;
 these files are not prebuilt ARM modules. Their UK messages, help text and
 window templates are selected from the same revisions. No separate asset
 licence is present in those selected resources. The flat Help template is the
