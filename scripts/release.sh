@@ -64,7 +64,7 @@ NOTES=$(awk -v v="$VERSION" '
     on' WHATSNEW.md | sed -e '/./,$!d')
 [ -n "$NOTES" ] || { echo "release: WHATSNEW.md has no \"## $VERSION\" section" >&2; exit 1; }
 
-REPO=JamesRandall/macarc
+REPO=acorn-playground/macarch
 SPARKLE_BIN=.build/artifacts/sparkle/Sparkle/bin
 [ -x "$SPARKLE_BIN/generate_keys" ] || swift package resolve
 # Unnotarised builds don't need a key (without one they don't check for updates).

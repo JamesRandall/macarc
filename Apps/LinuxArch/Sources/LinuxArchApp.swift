@@ -441,7 +441,7 @@ enum AppInfo {
     static let id = "com.accidentalfish.LinuxArch"
     static let version = "0.4.0"
     /// MacArch's, which LinuxArch is.
-    static let repository = "https://github.com/JamesRandall/macarc"
+    static let repository = "https://github.com/acorn-playground/macarch"
     static let website = "https://jamesdrandall.com"
 }
 

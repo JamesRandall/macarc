@@ -26,8 +26,8 @@
     </ul>
   </description>
   <launchable type="desktop-id">com.accidentalfish.LinuxArch.desktop</launchable>
-  <url type="homepage">https://github.com/JamesRandall/macarc</url>
-  <url type="vcs-browser">https://github.com/JamesRandall/macarc</url>
+  <url type="homepage">https://github.com/acorn-playground/macarch</url>
+  <url type="vcs-browser">https://github.com/acorn-playground/macarch</url>
   <content_rating type="oars-1.1"/>
   <categories>
     <category>Game</category>

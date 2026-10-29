@@ -31,7 +31,7 @@ struct WhatsNewView: View {
             }
             Divider()
             HStack {
-                Link("All releases on GitHub", destination: URL(string: "https://github.com/JamesRandall/macarc/releases")!)
+                Link("All releases on GitHub", destination: URL(string: "https://github.com/acorn-playground/macarch/releases")!)
                     .font(.callout)
                 Spacer()
                 Button("Continue") { dismiss() }

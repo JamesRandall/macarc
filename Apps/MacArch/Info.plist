@@ -16,7 +16,7 @@
     <key>LSApplicationCategoryType</key><string>public.app-category.entertainment</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
-    <key>SUFeedURL</key><string>https://github.com/JamesRandall/macarc/releases/latest/download/appcast.xml</string>
+    <key>SUFeedURL</key><string>https://github.com/acorn-playground/macarch/releases/latest/download/appcast.xml</string>
     <key>SUEnableAutomaticChecks</key><true/>
     <key>NSHumanReadableCopyright</key><string>RISC OS ROMs are not included; use images you own.</string>
     <key>CFBundleURLTypes</key>

@@ -41,7 +41,7 @@ Depends: $depends
 Recommends: gstreamer1.0-plugins-good, gstreamer1.0-plugins-ugly, gstreamer1.0-libav
 Section: otherosfs
 Priority: optional
-Homepage: https://github.com/JamesRandall/macarc
+Homepage: https://github.com/acorn-playground/macarch
 Description: Acorn Archimedes emulator
  LinuxArch is MacArch for Linux: an emulator of the Acorn Archimedes 300
  and 400 series, the A540, the A3000, and the A5000, A3010, A3020 and
