@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MacArch Web</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='2' width='14' height='10' rx='1' fill='%23d9d4c7'/%3E%3Crect x='3' y='4' width='10' height='6' fill='%23000'/%3E%3Crect x='5' y='13' width='6' height='1.5' fill='%23d9d4c7'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="src/style.css">
+  <script type="module" src="src/main.js"></script>
+</head>
+<body>
+  <header>
+    <h1>MacArch <span>WebAssembly</span></h1>
+    <p id="status" role="status">Loading the emulator…</p>
+  </header>
+
+  <main>
+    <div id="monitor">
+      <div id="bezel">
+        <canvas id="screen" width="640" height="512" aria-label="Archimedes screen"></canvas>
+        <button id="start" hidden>
+          <strong id="start-title">Play</strong>
+          <span id="start-detail">Click to switch on</span>
+        </button>
+      </div>
+      <p id="hint">Click the screen to capture the mouse (Select / Menu / Adjust are the left / middle / right buttons). Press Esc to release it.</p>
+    </div>
+
+    <nav id="toolbar" aria-label="Machine">
+      <button id="power" disabled title="Switch off and on again (back to the game's start)">Power</button>
+      <button id="reset" disabled title="The reset button">Reset</button>
+      <button id="pause" disabled>Pause</button>
+      <span class="sep"></span>
+      <label class="file" title="Put an ADFS floppy image in drive 0 (.adf, .adl, .jfd, .hfe)">Insert disc…<input id="disc-file" type="file" accept=".adf,.adl,.jfd,.hfe,.img"></label>
+      <button id="eject" disabled>Eject</button>
+      <label class="file" title="Boot a different RISC OS ROM image">ROM…<input id="rom-file" type="file" accept=".rom,.bin,*"></label>
+      <span class="sep"></span>
+      <button id="save" disabled title="Keep the machine's complete state in this tab">Save state</button>
+      <button id="restore" disabled>Load state</button>
+      <span class="sep"></span>
+      <label class="check"><input id="debug" type="checkbox"> Stats</label>
+    </nav>
+
+    <section id="stats" hidden aria-label="Performance">
+      <dl>
+        <dt>Emulation speed</dt><dd id="s-speed">–</dd>
+        <dt>Frames shown</dt><dd id="s-fps">–</dd>
+        <dt>Run batch (median / p95)</dt><dd id="s-batch">–</dd>
+        <dt>Guest time</dt><dd id="s-guest">–</dd>
+        <dt>Requested / executed ticks</dt><dd id="s-ticks">–</dd>
+        <dt>WASM module</dt><dd id="s-wasm">–</dd>
+        <dt>Linear memory</dt><dd id="s-mem">–</dd>
+        <dt>Startup</dt><dd id="s-startup">–</dd>
+      </dl>
+    </section>
+  </main>
+
+  <footer>
+    <p>The real <code>ArchimedesCore</code> emulator compiled to WebAssembly from Swift, running in a Web Worker. ROMs and discs stay in this browser tab.</p>
+  </footer>
+</body>
+</html>

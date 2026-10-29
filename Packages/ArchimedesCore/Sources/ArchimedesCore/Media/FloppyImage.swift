@@ -227,7 +227,7 @@ public final class FloppyImage {
         }
         guard let target = path ?? sourcePath else { throw MediaError.unreadable("no file to save to") }
         let merged = mergedImage()
-        try Data(merged).write(to: URL(fileURLWithPath: target), options: .atomic)
+        try HostFiles.write(Data(merged), to: target)
         base = merged
         overlay.removeAll()
         sha256 = SHA256.hex(merged)

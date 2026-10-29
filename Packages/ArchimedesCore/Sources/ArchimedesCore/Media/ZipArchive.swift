@@ -1,5 +1,4 @@
 import Foundation
-import zlib
 
 /// Reads ZIP archives (stored, deflated and imploded members), including the Acorn
 /// extra field ("AC", 0x4341) that RISC OS archivers such as SparkFS use to
@@ -71,7 +70,7 @@ public enum ZipArchive {
                 throw MediaError.unsupportedFormat("zip: \(path) uses compression method \(method) (only stored, deflate and implode are supported)")
             }
             guard flags & 1 == 0 else { throw MediaError.unsupportedFormat("zip: \(path) is encrypted") }
-            let check = m.data.withUnsafeBufferPointer { UInt32(zlib.crc32(0, $0.baseAddress, uInt($0.count))) }
+            let check = Zlib.crc32(m.data)
             guard check == crc else { throw MediaError.unsupportedFormat("zip: \(path) is corrupt (its CRC doesn't match)") }
             out.append(m)
         }
@@ -102,20 +101,5 @@ public enum ZipArchive {
         return Calendar(identifier: .gregorian).date(from: c)
     }
 
-    static func inflateRaw(_ input: [UInt8], expected: Int) -> [UInt8]? {
-        var z = z_stream()
-        guard inflateInit2_(&z, -MAX_WBITS, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else { return nil }
-        defer { inflateEnd(&z) }
-        var out = [UInt8](repeating: 0, count: max(expected, 1))
-        var src = input
-        let r: Int32 = src.withUnsafeMutableBufferPointer { s in
-            out.withUnsafeMutableBufferPointer { o in
-                z.next_in = s.baseAddress; z.avail_in = uInt(s.count)
-                z.next_out = o.baseAddress; z.avail_out = uInt(o.count)
-                return zlib.inflate(&z, Z_FINISH)
-            }
-        }
-        guard r == Z_STREAM_END || (expected == 0 && r == Z_BUF_ERROR) else { return nil }
-        return Array(out.prefix(Int(z.total_out)))
-    }
+    static func inflateRaw(_ input: [UInt8], expected: Int) -> [UInt8]? { Zlib.inflateRaw(input, expected: expected) }
 }

@@ -88,7 +88,7 @@ public final class HardDiscImage {
     deinit { close(fd) }
 
     public static func open(path: String, sectorSize: Int = 256) throws -> HardDiscImage {
-        let fd = Darwin.open(path, O_RDWR)
+        let fd = HostFiles.openFD(path, O_RDWR)
         guard fd >= 0 else { throw HardDiscError.cannotOpen(path) }
         var st = stat()
         fstat(fd, &st)
@@ -106,7 +106,7 @@ public final class HardDiscImage {
     @discardableResult
     public static func create(path: String, geometry: HardDiscGeometry) throws -> HardDiscImage {
         guard FileManager.default.createFile(atPath: path, contents: nil) else { throw HardDiscError.create(path) }
-        let fd = Darwin.open(path, O_RDWR)
+        let fd = HostFiles.openFD(path, O_RDWR)
         guard fd >= 0, ftruncate(fd, off_t(geometry.byteCount)) == 0 else {
             if fd >= 0 { close(fd) }
             throw HardDiscError.create(path)

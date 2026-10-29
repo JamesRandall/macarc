@@ -177,6 +177,19 @@ A `.bas` file dropped on the machine's window, or opened with MacArch, is tokeni
 
 In VS Code, press F5 in a `.bas` file (or launch with `"basic": "program.bas"`): MacArch goes to BASIC's prompt, loads the program and RUNs it, with breakpoints on its lines, steps by statement, the PROC and FN calls as the call stack, BASIC's variables (to set too), BASIC expressions in the console and hovers, and BASIC errors as exception breakpoints. See `Examples/hello-basic`.
 
+## Browser (WebAssembly)
+
+The same `ArchimedesCore` also builds for WebAssembly and runs in a web page
+(a Web Worker, canvas, sound, keyboard and pointer-locked mouse):
+
+```sh
+scripts/build-wasm.sh                                  # needs the swift.org 6.4.1 toolchain + WASM SDK
+scripts/bundle-web.sh <rom> zarch <Zarch.adf>          # optional: bundle a ROM and a Classic, locally
+node web/serve.mjs                                     # http://localhost:8080/
+```
+
+See [docs/wasm.md](docs/wasm.md) for the design, ABI, tests and measurements.
+
 ## Licensing
 MacArch is free software under the GNU General Public License, version 3 (see `LICENSE`). The Swift code is original. See `docs/reference-audit.md` for how the reference emulators were used. ROMs and disc images are not distributed.
 

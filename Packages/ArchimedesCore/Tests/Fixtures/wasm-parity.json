@@ -1,0 +1,52 @@
+{
+  "_comment": "Native/WASM parity fixtures: Tests/ArchimedesEmbeddingTests (native) and web/tests/parity.mjs (WASM) both assert these.",
+  "synthetic": {
+    "source": "        ORG 0\n        B start\n        NOP\nstart   MOV R0, #&3800000\n        ADD PC, R0, #high\nhigh    MOV R1, #&2000000\n        MOV R2, #0\nloop    ADD R2, R2, R2, LSL #3\n        ADD R2, R2, #&35\n        STR R2, [R1], #4\n        BIC R1, R1, #&10000\n        B loop\n",
+    "romWords": [
+      3925868544,
+      3785359360,
+      3818915086,
+      3800100880,
+      3818918914,
+      3818921984,
+      3766624642,
+      3800178741,
+      3833667588,
+      3821082625,
+      3942645754
+    ],
+    "romBytes": 2097152,
+    "sliceTicks": 480000,
+    "slices": 50,
+    "ticks": 24000006,
+    "pc": 58720284,
+    "ramSHA256": "a3bc8da6a19598f4fadab6008abb6fa52020dfb247560706ebaa69ee4635bf87"
+  },
+  "zarch": {
+    "romSHA256": "7ed91aa81d76e38bfdd36bba0778ffa1e53cecd756aeb1ae90e2bd155fc15639",
+    "discSHA256": "bc082f7313cf8b20714f842cb30d5aec3eb4677f3acc3131f8b3235b20a6f86f",
+    "sliceTicks": 480000,
+    "checkpoints": [
+      {
+        "seconds": 10,
+        "frame": 499,
+        "checksum": "47D6A5D4B2635A05"
+      },
+      {
+        "seconds": 20,
+        "frame": 1000,
+        "checksum": "F0B21B446428093B"
+      },
+      {
+        "seconds": 30,
+        "frame": 1501,
+        "checksum": "475AB4DE3D4F628D"
+      },
+      {
+        "seconds": 40,
+        "frame": 2002,
+        "checksum": "24E724FC0A148764"
+      }
+    ]
+  }
+}

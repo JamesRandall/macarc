@@ -212,7 +212,7 @@ public enum ADFSHardDiscWriter {
         var newBoot: [UInt8]?
 
         init(path: String) throws {
-            let fd = Darwin.open(path, O_RDWR)
+            let fd = HostFiles.openFD(path, O_RDWR)
             guard fd >= 0 else { throw HardDiscError.cannotOpen(path) }
             var st = stat()
             fstat(fd, &st)

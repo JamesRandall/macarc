@@ -297,7 +297,7 @@ public enum ROMImporter {
         let base = String(rom.versionString.map { "/:\\".contains($0) ? "-" : $0 })
         var path = (directory as NSString).appendingPathComponent(base + ".rom")
         if fm.fileExists(atPath: path) { path = (directory as NSString).appendingPathComponent("\(base) \(rom.sha256.prefix(8)).rom") }
-        try Data(rom.data).write(to: URL(fileURLWithPath: path), options: .atomic)
+        try HostFiles.write(Data(rom.data), to: path)
         return path
     }
 
