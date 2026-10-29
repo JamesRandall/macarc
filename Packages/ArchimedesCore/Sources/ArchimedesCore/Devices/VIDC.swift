@@ -435,14 +435,27 @@ public final class VIDC {
     /// pads its pointer images, so this is often well inside
     /// `pointerPosition`, which is the image's top-left corner.
     public var pointerHotspot: (x: Int, y: Int) {
+        pointerTip.map { ($0.x - frameLeft, $0.y - frameTop) } ?? pointerPosition
+    }
+
+    /// Whether the pointer is on the screen: some of it drawn, its tip in
+    /// the display area. Programs turn it off by giving it no rows or a
+    /// blank image, or by moving it away.
+    public var pointerShown: Bool {
+        guard let t = pointerTip else { return false }
+        return t.x >= hDisplayStart && t.x < hDisplayEnd && t.y >= vDisplayStart && t.y < vDisplayEnd
+    }
+
+    /// The pointer's first visible pixel, in VIDC's coordinates.
+    private var pointerTip: (x: Int, y: Int)? {
         let rows = max(0, min(64, vCursorEnd - vCursorStart))
         for row in 0..<rows {
             let w0 = memc.dmaWord(memc.cinit &+ UInt32(row * 8)), w1 = memc.dmaWord(memc.cinit &+ UInt32(row * 8 + 4))
             for i in 0..<32 where ((i < 16 ? w0 : w1) >> UInt32((i & 15) * 2)) & 3 != 0 {
-                return (hCursorStart - frameLeft + i, vCursorStart - frameTop + row)
+                return (hCursorStart + i, vCursorStart + row)
             }
         }
-        return pointerPosition
+        return nil
     }
 
     public var soundSummary: [String: String] {

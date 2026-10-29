@@ -165,6 +165,16 @@ struct MouseSettingsView: View {
     var body: some View {
         Form {
             Section {
+                Picker("Mouse", selection: $settings.mouseMode) {
+                    ForEach(AppSettings.MouseMode.allCases) { Text($0.name).tag($0) }
+                }
+                .pickerStyle(.radioGroup)
+                Text(settings.mouseMode == .capture
+                     ? "Click the display to capture the mouse; ⌃⌘M or switching away releases it. The Archimedes sees the mouse move just as yours does."
+                     : "RISC OS's pointer goes wherever the Mac's is, and the Mac's stays free to leave the window. Over the screen (not its border) the Mac's is hidden while RISC OS shows its own; where a program turns RISC OS's off and reads the mouse itself, as many games do, the Mac's movements are passed on instead, and capturing the mouse may suit it better.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            Section {
                 Picker("Secondary click", selection: $settings.secondaryClick) {
                     ForEach(AppSettings.SecondaryClick.allCases) { Text($0.name).tag($0) }
                 }
@@ -179,10 +189,6 @@ struct MouseSettingsView: View {
                                : "⌘-click, ⌃-click, ⌥-click or the middle button")
                 LabeledContent("Adjust (right)", value: settings.secondaryClick == .adjust ? "Secondary click" : "⌥-click")
                 Text("⌘-click is the cleanest Menu on a trackpad: Command is never passed to the Archimedes, whereas Control and Option are also its Ctrl and Alt keys.")
-                    .font(.callout).foregroundStyle(.secondary)
-            }
-            Section {
-                Text("Click the display to capture the mouse; ⌃⌘M or switching away releases it.")
                     .font(.callout).foregroundStyle(.secondary)
             }
         }
@@ -202,7 +208,7 @@ struct DebuggingSettingsView: View {
                 TextField("Port", value: $settings.debugAdapterPort, format: .number.grouping(.never))
                     .disabled(!settings.debugAdapterEnabled)
                 LabeledContent("Status", value: log.debugAdapterState)
-                Text("VS Code and other editors that speak DAP connect to localhost on this port to assemble and run ARM code, set breakpoints in the source, step (and step back), and inspect registers and memory. The MacArch extension for VS Code is in Tools/vscode-macarch. Changes take effect next launch.")
+                Text("VS Code and other editors that speak DAP connect to localhost on this port to assemble and run ARM code, set breakpoints in the source, step (and step back), and inspect registers and memory. The MacArch extension for VS Code is at github.com/acorn-playground/vscode-macarch. Changes take effect next launch.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

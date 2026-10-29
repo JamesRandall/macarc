@@ -172,8 +172,12 @@ struct MacArchApp: App {
                 Button("Power Cycle") { machine?.powerCycle() }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                 Divider()
+                Picker("Mouse", selection: Binding(get: { AppSettings.shared.mouseMode }, set: { AppSettings.shared.mouseMode = $0 })) {
+                    ForEach(AppSettings.MouseMode.allCases) { Text($0.name).tag($0) }
+                }
                 Button("Capture or Release Mouse") { machine?.toggleMouseCapture() }
                     .keyboardShortcut("m", modifiers: [.command, .control])
+                    .disabled(AppSettings.shared.mouseMode == .follow)
                 Divider()
                 Button("Rewind 5 Seconds") { machine?.rewind(seconds: 5) }
                     .keyboardShortcut(.leftArrow, modifiers: [.command, .option])

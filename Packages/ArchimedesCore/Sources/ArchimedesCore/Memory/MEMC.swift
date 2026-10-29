@@ -113,7 +113,10 @@ public final class MEMC: ARMBus {
         ram = .allocate(capacity: ramSize)
         ram.initialize(repeating: 0, count: ramSize)
         ramMask = ramSize - 1
-        // ROM area is 8 MB; images are mirrored to the next power of two.
+        // High ROM is 8 MB (&3800000-&3FFFFFF); images are mirrored to the
+        // next power of two, so a 2 MB ROM appears four times and a 4 MB
+        // one (the sockets are wired for it) twice.
+        precondition(rom.count <= 8 << 20, "ROM images are at most 8 MB")
         var size = 1
         while size < max(rom.count, 4) { size <<= 1 }
         romSize = size

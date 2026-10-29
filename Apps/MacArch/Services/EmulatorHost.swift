@@ -11,6 +11,8 @@ final class EmulatorHost: @unchecked Sendable {
     final class Session {
         fileprivate(set) var machine: Machine
         let rewinder = Rewinder()
+        /// Steers RISC OS's pointer to the Mac's, in that mouse mode.
+        let pointerFollower = PointerFollower()
         unowned let host: EmulatorHost
 
         fileprivate init(machine: Machine, host: EmulatorHost) {
@@ -52,6 +54,7 @@ final class EmulatorHost: @unchecked Sendable {
     private var latestStop: String?
     private var latestStopCount = 0
     private var heldFlag = false
+    private var latestPointerShown = false
 
     /// Drive 0's image, as the window needs to know it.
     struct DiscState: Equatable {
@@ -138,6 +141,8 @@ final class EmulatorHost: @unchecked Sendable {
 
     var frame: VideoFrame { lock.lock(); defer { lock.unlock() }; return latestFrame }
     var lights: Machine.Lights { lock.lock(); defer { lock.unlock() }; return latestLights }
+    /// Whether RISC OS's pointer is on the screen, as of the last frame.
+    var pointerShown: Bool { lock.lock(); defer { lock.unlock() }; return latestPointerShown }
     var guestSeconds: Double { lock.lock(); defer { lock.unlock() }; return latestSeconds }
     var disc: DiscState { lock.lock(); defer { lock.unlock() }; return latestDisc }
     /// Why the debugger has stopped the machine (nil while it runs), and a
@@ -178,6 +183,9 @@ final class EmulatorHost: @unchecked Sendable {
         m.vidc.frameCompleted = { [weak self, unowned m] frame in
             m.ioc.pumpKeyboard()
             guard let self else { return }
+            self.session?.pointerFollower.frame(m)
+            let shown = m.vidc.pointerShown
+            self.lock.lock(); self.latestPointerShown = shown; self.lock.unlock()
             self.publish(frame)
             self.frameTap?(frame, m.ticks)
         }

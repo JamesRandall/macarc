@@ -82,6 +82,18 @@ final class AppSettings {
         didSet { d.set(secondaryClick.rawValue, forKey: "secondaryClick") }
     }
 
+    /// How the Mac's mouse drives the Archimedes': captured by a click and
+    /// moving it by how far it moves, or left free with RISC OS's pointer
+    /// following the Mac's.
+    enum MouseMode: String, CaseIterable, Identifiable {
+        case capture, follow
+        var id: Self { self }
+        var name: String { self == .capture ? "Capture the mouse" : "Follow the Mac pointer" }
+    }
+    var mouseMode: MouseMode {
+        didSet { d.set(mouseMode.rawValue, forKey: "mouseMode") }
+    }
+
     /// Editors (VS Code) debug the first window's machine over the Debug
     /// Adapter Protocol on this localhost port. Takes effect next launch.
     var debugAdapterEnabled: Bool { didSet { d.set(debugAdapterEnabled, forKey: "debugAdapterEnabled") } }
@@ -94,6 +106,7 @@ final class AppSettings {
         model = d.string(forKey: "model").flatMap(MachineModel.init(rawValue:)) ?? .a3000
         recentDiscs = d.stringArray(forKey: "recentDiscs") ?? []
         secondaryClick = d.string(forKey: "secondaryClick").flatMap(SecondaryClick.init(rawValue:)) ?? .adjust
+        mouseMode = d.string(forKey: "mouseMode").flatMap(MouseMode.init(rawValue:)) ?? .capture
         for p in d.stringArray(forKey: "romLibrary") ?? [] { addROM(p, save: false) }
         // Developer convenience: launched from the project with no ROM chosen.
         if romPath == nil {
@@ -104,6 +117,37 @@ final class AppSettings {
             romPath = romLibrary.max { $0.version.localizedStandardCompare($1.version) == .orderedAscending }?.path
         }
         if let romPath { addROM(romPath, save: false) }
+        addBundledArcLibre()
+        // (Observers don't run in init: saved by hand.)
+        if romPath.map({ !FileManager.default.fileExists(atPath: $0) }) ?? true {
+            romPath = romLibrary.max { $0.version.localizedStandardCompare($1.version) == .orderedAscending }?.path
+            d.set(romPath, forKey: "romPath")
+        }
+    }
+
+    /// ArcLibre, the free ROM rebuilt from RISC OS's public sources, comes
+    /// with MacArch so that it works without one of Acorn's. It joins the
+    /// ROM list (replacing an older ArcLibre MacArch put there) unless it
+    /// was taken off; Acorn's ROMs stay the default when there are any.
+    private func addBundledArcLibre() {
+        guard let url = Bundle.main.url(forResource: "ArcLibre", withExtension: "rom", subdirectory: "ArcLibre"),
+              let rom = try? ROMImage.load(paths: [url.path]) else { return }
+        if d.stringArray(forKey: "declinedBundledROMs")?.contains(rom.sha256) == true { return }
+        let installed = romLibrary.compactMap { e in (try? ROMImage.load(paths: [e.path])).map { (e, $0.sha256) } }
+        if installed.contains(where: { $0.1 == rom.sha256 }) { return }
+        let directory = (Self.supportDirectory as NSString).appendingPathComponent("ROMs")
+        guard let path = try? ROMImporter.install(rom, into: directory) else { return }
+        addROM(path)
+        for (e, _) in installed where e.version.hasPrefix("ArcLibre") && e.path.hasPrefix(directory) {
+            if romPath == e.path { romPath = path; d.set(path, forKey: "romPath") }
+            removeROM(e.path)
+            try? FileManager.default.removeItem(atPath: e.path)
+        }
+    }
+
+    /// The bundled ArcLibre was taken off the ROM list: don't put it back.
+    func declineBundledROM(sha256: String) {
+        d.set((d.stringArray(forKey: "declinedBundledROMs") ?? []) + [sha256], forKey: "declinedBundledROMs")
     }
 
     /// Adds a ROM to the library if it loads; returns its version.

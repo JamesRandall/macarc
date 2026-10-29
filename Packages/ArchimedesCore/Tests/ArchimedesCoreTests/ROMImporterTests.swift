@@ -97,6 +97,25 @@ final class ROMImporterTests: XCTestCase {
         XCTAssertEqual(ROMImporter.models(for: ro3), MachineModel.allCases)
     }
 
+    /// The sockets take 4 MB ROMs (RISC OS 3.11 with an extension ROM after
+    /// it, say): as one image, four 1 MB chips or two 2 MB ones.
+    func testFourMegabyteROMs() {
+        let rom = Self.fakeROM("RISC OS 3.11 (29 Sep 1992)", size: 4 << 20)
+        let four = Self.chips(rom, count: 4), two = Self.chips(rom, count: 2)
+        for (what, entries) in [("image", [ROMImporter.Entry(name: "big.rom", folder: "a", data: rom)]),
+                                ("four chips", (0..<4).map { ROMImporter.Entry(name: "x\($0)", folder: "b", data: four[(3 - $0 + 1) % 4]) }),
+                                ("two chips", [ROMImporter.Entry(name: "hi", folder: "c", data: two[1]), .init(name: "lo", folder: "c", data: two[0])])] {
+            let r = ROMImporter.scan(entries)
+            XCTAssertEqual(r.found.first?.rom.data, rom, "\(what): \(r.rejected)")
+        }
+        // A 2 MB ROM is still whole on its own; half of one isn't.
+        XCTAssertNotNil(ROMImporter.recognise([Self.fakeROM("RISC OS 3.11 (29 Sep 1992)", size: 2 << 20)], sources: []))
+        let half = ROMImporter.scan([.init(name: "half.rom", folder: "d", data: Self.fakeROM("RISC OS 3.11 (29 Sep 1992)", size: 1 << 20))])
+        XCTAssertTrue(half.found.isEmpty)
+        XCTAssertTrue(half.rejected.first?.reason.contains("part of") == true, "\(half.rejected)")
+        XCTAssertThrowsError(try ROMImage.build(parts: [Self.fakeROM(size: 16 << 20)], sources: []), "more than MEMC's ROM space")
+    }
+
     /// The user's chip sets are recognised as the known-good dumps.
     func testRealChipSetsAreKnown() throws {
         let roms = GameSmokeTests.root.appendingPathComponent("roms")

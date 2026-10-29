@@ -104,7 +104,7 @@ struct WelcomeScreen: View {
 
     private var machineCard: some View {
         WelcomeCard(colour: .green, symbol: "desktopcomputer", title: "Archimedes",
-                    blurb: "An A310, A3000, A440/1 or A5000, with RISC OS 2 or 3 from your own ROMs. Fit hard discs, and step through its ARM in the debugger.") {
+                    blurb: "An A310, A3000, A440/1 or A5000, with ArcLibre, the free RISC OS that comes with MacArch, or RISC OS 2 or 3 from your own ROMs. Fit hard discs, and step through its ARM in the debugger.") {
             ModelChips()
         } actions: {
             Button {

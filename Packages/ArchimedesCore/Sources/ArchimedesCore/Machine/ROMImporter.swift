@@ -54,12 +54,17 @@ public enum ROMImporter {
             Known(title: "RISC OS 3.11", note: "UK release, 29 Sep 1992 (2 MB)"),
         "b2658bb1d30ea0d5e322dca2895ec969d9a28695f96726da119e08fb3aa068d3":
             Known(title: "RISC OS 2.00", note: "UK release, 05 Oct 1988 (512 KB)"),
+        "d83d2e8cbb6adb1c37883e194c527279b5233c5ce3b0c9c324f6f6ae91447f2d":
+            Known(title: "ArcLibre 0.8", note: "Free ROM from RISC OS's public sources, 28 Oct 2026 (2 MB)"),
     ]
 
-    /// Sizes a whole OS ROM comes in: Arthur and RISC OS 2 512 KB, RISC OS 3 2 MB.
-    static let imageSizes: Set<Int> = [512 << 10, 1 << 20, 2 << 20]
-    /// Chip sizes: four 8-bit chips (128 KB or 512 KB) or two 16-bit ones.
-    static let chipSets: [(count: Int, size: Int)] = [(4, 128 << 10), (4, 512 << 10), (2, 256 << 10), (2, 1 << 20)]
+    /// Sizes a whole OS ROM comes in: Arthur and RISC OS 2 512 KB, RISC OS 3
+    /// 2 MB. The sockets are wired for 4 MB (MEMC's high ROM is 8 MB, but
+    /// the ROMs only reach 4 MB of it), and people fill them: RISC OS 3.11
+    /// with an extension ROM after it, or a bigger ArcLibre.
+    static let imageSizes: Set<Int> = [512 << 10, 1 << 20, 2 << 20, 4 << 20]
+    /// Chip sizes: four 8-bit chips (128 KB, 512 KB or 1 MB) or two 16-bit ones.
+    static let chipSets: [(count: Int, size: Int)] = [(4, 128 << 10), (4, 512 << 10), (4, 1 << 20), (2, 256 << 10), (2, 1 << 20), (2, 2 << 20)]
     static let maxFileSize = 16 << 20
 
     // MARK: Gathering files
@@ -176,12 +181,18 @@ public enum ROMImporter {
 
     /// A whole image in one file.
     static func recognise(_ parts: [[UInt8]], sources: [String]) -> ROMImage? {
-        guard let rom = try? ROMImage.build(parts: parts, sources: sources), hasVersion(rom), rom.data.count == expectedSize(rom.versionString) else { return nil }
+        guard let rom = try? ROMImage.build(parts: parts, sources: sources), hasVersion(rom), fits(rom.data.count, rom.versionString) else { return nil }
         return rom
     }
 
     /// The size each version shipped as.
-    static func expectedSize(_ version: String) -> Int { version.hasPrefix("RISC OS 3") ? 2 << 20 : 512 << 10 }
+    static func expectedSize(_ version: String) -> Int { version.hasPrefix("RISC OS 3") || version.hasPrefix("ArcLibre") ? 2 << 20 : 512 << 10 }
+
+    /// Whether an image is a whole ROM: the size its version shipped as,
+    /// or a bigger one holding more after it (up to the sockets' 4 MB).
+    static func fits(_ size: Int, _ version: String) -> Bool {
+        imageSizes.contains(size) && size >= expectedSize(version)
+    }
 
     /// A set of files: consecutive slices in name order, or chips side by
     /// side in name order and then every other order (only the right one
@@ -190,7 +201,7 @@ public enum ROMImporter {
         func check(_ combined: [UInt8], _ sources: [String], _ note: String) -> ROMImage? {
             guard ROMImage.looksLikeRISCOS(combined) else { return nil }
             let version = ROMImage.findVersion(combined)
-            guard version.hasPrefix("RISC OS") || version.hasPrefix("Arthur"), combined.count == expectedSize(version) else { return nil }
+            guard ROMImage.isOS(version), fits(combined.count, version) else { return nil }
             return ROMImage(data: combined, sha256: SHA256.hex(combined), versionString: version, sources: sources, layoutNote: note)
         }
         // Consecutive slices: the version string can't prove their order,
@@ -219,8 +230,7 @@ public enum ROMImporter {
     enum ChipResult { case found(ROMImage), unordered(String), none }
 
     static func versionIn(_ d: [UInt8]) -> Bool {
-        let v = ROMImage.findVersion(d)
-        return v.hasPrefix("RISC OS") || v.hasPrefix("Arthur")
+        ROMImage.isOS(ROMImage.findVersion(d))
     }
 
     /// Chips side by side on the 32-bit bus: four byte-wide or two halfword-wide.
@@ -242,7 +252,7 @@ public enum ROMImporter {
     }
 
     static func hasVersion(_ rom: ROMImage) -> Bool {
-        rom.versionString.hasPrefix("RISC OS") || rom.versionString.hasPrefix("Arthur")
+        ROMImage.isOS(rom.versionString)
     }
 
     static func chipRange(_ names: [String]) -> String {
@@ -255,7 +265,7 @@ public enum ROMImporter {
     static func rejection(_ e: Entry, among all: [Entry]) -> String? {
         let n = e.data.count
         if n < 64 << 10 { return nil }
-        if imageSizes.contains(n), let rom = try? ROMImage.build(parts: [e.data], sources: [e.name]), hasVersion(rom) {
+        if imageSizes.contains(n), let rom = try? ROMImage.build(parts: [e.data], sources: [e.name]), hasVersion(rom), !fits(n, rom.versionString) {
             return "part of \(rom.versionString), which is \(expectedSize(rom.versionString) >> 20) MB: add all of its files together"
         }
         let partners = all.filter { $0.folder == e.folder && $0.data.count == n }.count
@@ -264,12 +274,13 @@ public enum ROMImporter {
         }
         if chipSets.contains(where: { $0.size == n }) { return "looks like a ROM chip, but no order of its set reads as RISC OS" }
         if imageSizes.contains(n) { return "the right size for a ROM, but no RISC OS or Arthur version string was found in it" }
-        return "\(n / 1024) KB is not a RISC OS ROM size (512 KB or 2 MB, or chips of 128 or 512 KB)"
+        return "\(n / 1024) KB is not a RISC OS ROM size (512 KB, 2 MB or 4 MB, or chips of 128 KB, 512 KB or 1 MB)"
     }
 
     // MARK: Installing
 
-    /// Models this ROM can drive. The A5000 family's ADFS needs RISC OS 3.
+    /// Models this ROM can drive. The A5000 family's ADFS needs RISC OS 3
+    /// (ArcLibre has only the earlier machines' drivers).
     public static func models(for rom: ROMImage) -> [MachineModel] {
         let three = rom.versionString.hasPrefix("RISC OS 3")
         return MachineModel.allCases.filter { three || !$0.hasNewIO }

@@ -469,6 +469,15 @@ final class MachineController {
     func keyDown(_ code: UInt8) { host?.send { $0.machine.keyDown(code) } }
     func keyUp(_ code: UInt8) { host?.send { $0.machine.keyUp(code) } }
     func mouseMove(dx: Int, dy: Int) { host?.send { $0.machine.mouseMove(dx: dx, dy: dy) } }
+    /// Following the Mac pointer: where RISC OS's should go (frame pixels,
+    /// or nil to leave it), and how far the Mac's moved, for programs that
+    /// turn RISC OS's off and read the mouse themselves.
+    func followPointer(to target: (x: Int, y: Int)?, dx: Int = 0, dy: Int = 0) {
+        host?.send { s in
+            s.pointerFollower.target = target
+            s.pointerFollower.moveBy(dx: dx, dy: dy, in: s.machine)
+        }
+    }
     func releaseAllKeys() { host?.send { $0.machine.keyboard.releaseAll(); $0.machine.ioc.pumpKeyboard() } }
 
     /// Types the clipboard's text into the machine.

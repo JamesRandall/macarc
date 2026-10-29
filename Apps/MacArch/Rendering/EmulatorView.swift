@@ -4,7 +4,8 @@ import MetalKit
 import SwiftUI
 
 /// The machine's screen. Takes keyboard focus and sends keys to the
-/// machine; a click hands it the mouse.
+/// machine; a click hands it the mouse, or (Settings ▸ Mouse) RISC OS's
+/// pointer follows the Mac's.
 final class EmulatorNSView: MTKView {
     weak var machine: MachineController?
     var renderer: Renderer?
@@ -75,7 +76,7 @@ final class EmulatorNSView: MTKView {
         window.setFrame(frame, display: true, animate: true)
     }
 
-    // MARK: Mouse (captured, relative)
+    // MARK: Mouse (captured and relative, or following the Mac's)
 
     /// Posted (with the controller) by Machine > Capture or Release Mouse.
     static let toggleMouseCapture = Notification.Name("MacArchToggleMouseCapture")
@@ -106,8 +107,43 @@ final class EmulatorNSView: MTKView {
     }
 
     @objc private func toggleMouseCapture(_ n: Notification) {
-        guard (n.object as AnyObject?) === machine else { return }
+        guard (n.object as AnyObject?) === machine, !following else { return }
         setMouseCaptured(!mouseCaptured)
+    }
+
+    /// Whether RISC OS's pointer follows the Mac's, which stays free.
+    private var following: Bool { AppSettings.shared.mouseMode == .follow }
+    /// Whether the Mac's pointer is hidden over the picture, where RISC
+    /// OS's takes its place.
+    private var macPointerHidden = false
+    private static let noPointer = NSCursor(image: NSImage(size: NSSize(width: 1, height: 1)), hotSpot: .zero)
+
+    /// Following: sends RISC OS's pointer to the Mac's, and while RISC OS's
+    /// is off, the movement as counts.
+    private func follow(_ e: NSEvent) {
+        if mouseCaptured { setMouseCaptured(false) }
+        // RISC OS's pointer can't go into VIDC's border: there it waits at
+        // the display area's edge, and the Mac's pointer shows.
+        var spot = framePoint(e, clamped: true)
+        var inDisplay = spot != nil
+        if let s = spot, let d = machine?.host?.frame.displayArea {
+            let x = min(max(s.x, d.x), d.x + d.width - 1), y = min(max(s.y, d.y), d.y + d.height - 1)
+            inDisplay = x == s.x && y == s.y && framePoint(e) != nil
+            spot = (x, y)
+        }
+        machine?.followPointer(to: spot, dx: Int(e.deltaX.rounded()), dy: Int(-e.deltaY.rounded()))
+        let hide = inDisplay && machine?.host?.pointerShown == true
+        if hide != macPointerHidden {
+            macPointerHidden = hide
+            (hide ? Self.noPointer : NSCursor.arrow).set()
+        } else if hide {
+            Self.noPointer.set()
+        }
+    }
+
+    private func stopFollowing() {
+        machine?.followPointer(to: nil)
+        if macPointerHidden { macPointerHidden = false; NSCursor.arrow.set() }
     }
 
     private func move(_ e: NSEvent) {
@@ -155,16 +191,20 @@ final class EmulatorNSView: MTKView {
         // A network tile without the keyboard: the first click gives it the
         // keyboard, rather than capturing the mouse.
         if !takesFocus, let onFocus { onFocus(); return }
+        if following { follow(e); press(0, primaryButton(e)); return }
         if !mouseCaptured { setMouseCaptured(true); return }
         press(0, primaryButton(e))
     }
-    override func mouseUp(with e: NSEvent) { if mouseCaptured { release(0) } }
-    override func rightMouseDown(with e: NSEvent) { if mouseCaptured { press(1, secondaryButton) } }
-    override func rightMouseUp(with e: NSEvent) { if mouseCaptured { release(1) } }
-    override func otherMouseDown(with e: NSEvent) { if mouseCaptured { press(2, Self.menu) } }
-    override func otherMouseUp(with e: NSEvent) { if mouseCaptured { release(2) } }
+    /// Whether the buttons go to the machine.
+    private var buttonsGo: Bool { mouseCaptured || (following && takesFocus) }
+    override func mouseUp(with e: NSEvent) { release(0) }
+    override func rightMouseDown(with e: NSEvent) { if buttonsGo { press(1, secondaryButton) } }
+    override func rightMouseUp(with e: NSEvent) { release(1) }
+    override func otherMouseDown(with e: NSEvent) { if buttonsGo { press(2, Self.menu) } }
+    override func otherMouseUp(with e: NSEvent) { release(2) }
     override func mouseMoved(with e: NSEvent) {
         if mouseCaptured { move(e) } else { inspect(e) }
+        if following && takesFocus { follow(e) }
     }
 
     override func updateTrackingAreas() {
@@ -173,22 +213,39 @@ final class EmulatorNSView: MTKView {
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
     }
 
-    override func mouseExited(with e: NSEvent) { if machine?.inspecting == true { machine?.hover(x: -1, y: -1) } }
+    override func mouseExited(with e: NSEvent) {
+        if machine?.inspecting == true { machine?.hover(x: -1, y: -1) }
+        if following { stopFollowing() }
+    }
+
+    /// Where the picture is in the view.
+    private var pictureRect: CGRect {
+        let size = pictureSize
+        return CGRect(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2, width: size.width, height: size.height)
+    }
+
+    /// The frame pixel under the mouse; off the picture, nil or (clamped)
+    /// the nearest at its edge.
+    private func framePoint(_ e: NSEvent, clamped: Bool = false) -> (x: Int, y: Int)? {
+        guard let f = machine?.host?.frame, f.width > 1 else { return nil }
+        let p = convert(e.locationInWindow, from: nil), r = pictureRect
+        var u = (p.x - r.minX) / r.width, v = (p.y - r.minY) / r.height
+        if clamped { u = min(max(u, 0), 0.9999); v = min(max(v, 0), 0.9999) }
+        guard u >= 0, u < 1, v >= 0, v < 1 else { return nil }
+        let c = renderer?.crop ?? VideoFrame.Area(x: 0, y: 0, width: f.width, height: f.height)
+        return (c.x + Int(u * CGFloat(c.width)), c.y + Int((isFlipped ? v : 1 - v) * CGFloat(c.height)))
+    }
 
     /// While the debugger is open: which frame pixel is under the mouse.
     private func inspect(_ e: NSEvent) {
-        guard let machine, machine.inspecting, let f = machine.host?.frame, f.width > 1 else { return }
-        let p = convert(e.locationInWindow, from: nil)
-        let size = pictureSize
-        let ox = (bounds.width - size.width) / 2, oy = (bounds.height - size.height) / 2
-        let u = (p.x - ox) / size.width, v = (p.y - oy) / size.height
-        guard u >= 0, u < 1, v >= 0, v < 1 else { machine.hover(x: -1, y: -1); return }
-        let c = renderer?.crop ?? VideoFrame.Area(x: 0, y: 0, width: f.width, height: f.height)
-        machine.hover(x: c.x + Int(u * CGFloat(c.width)), y: c.y + Int((isFlipped ? v : 1 - v) * CGFloat(c.height)))
+        guard let machine, machine.inspecting else { return }
+        let p = framePoint(e)
+        machine.hover(x: p?.x ?? -1, y: p?.y ?? -1)
     }
-    override func mouseDragged(with e: NSEvent) { move(e) }
-    override func rightMouseDragged(with e: NSEvent) { move(e) }
-    override func otherMouseDragged(with e: NSEvent) { move(e) }
+    override func mouseDragged(with e: NSEvent) { drag(e) }
+    override func rightMouseDragged(with e: NSEvent) { drag(e) }
+    override func otherMouseDragged(with e: NSEvent) { drag(e) }
+    private func drag(_ e: NSEvent) { if following && buttonsGo { follow(e) } else { move(e) } }
 
     // MARK: Keyboard
 
@@ -289,6 +346,8 @@ final class EmulatorNSView: MTKView {
 
     @objc private func windowDidResignKey(_ n: Notification) {
         setMouseCaptured(false)
+        for b in pressed.keys { release(b) }
+        stopFollowing()
         typed.removeAll()
         macShiftHeld = false
         machine?.releaseAllKeys()

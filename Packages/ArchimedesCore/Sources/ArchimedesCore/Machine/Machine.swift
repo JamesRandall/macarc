@@ -301,7 +301,16 @@ public final class Machine {
             // RISC OS clears memory before it reads the keyboard, so with
             // more than 4 MB keys must be held longer (measured on an A540:
             // under 5 s at 8 MB, under 8 s at 16 MB).
-            let ms = max(configuration.powerOnKeysMs, configuration.ramKB > 4096 ? 2000 + configuration.ramKB / 2 : 0)
+            var ms = max(configuration.powerOnKeysMs, configuration.ramKB > 4096 ? 2000 + configuration.ramKB / 2 : 0)
+            // RISC OS 3.1x's self-test, given a ROM bigger than its 2 MB that
+            // isn't a mirror of it (one with an extension ROM after it, in
+            // sockets wired for 4 MB), tests for 31 s longer before RISC OS
+            // reads the keyboard, on every model. (ArcLibre's, from RISC OS
+            // 3.60, doesn't.)
+            let half = rom.data.count / 2
+            if rom.data.count > 2 << 20, rom.versionString.hasPrefix("RISC OS 3"), rom.data[..<half] != rom.data[half...] {
+                ms += 32_000
+            }
             let release = UInt64(ms) * 24_000
             for k in configuration.powerOnKeys { schedule(InputEvent(tick: release, action: .keyUp(k))) }
         }

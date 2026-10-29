@@ -51,6 +51,7 @@ public struct ROMImage: Sendable {
     public static func build(parts: [[UInt8]], sources: [String]) throws -> ROMImage {
         let concatenated = parts.flatMap { $0 }
         guard concatenated.count >= 1024 else { throw ROMError.invalid("only \(concatenated.count) bytes") }
+        guard concatenated.count <= 8 << 20 else { throw ROMError.invalid("\(concatenated.count >> 20) MB is more than MEMC's 8 MB of ROM space") }
         var candidates: [([UInt8], String)] = [(concatenated, parts.count == 1 ? "single image" : "\(parts.count) files concatenated in name order")]
         if parts.count == 4, Set(parts.map { $0.count }).count == 1 {
             let n = parts[0].count
@@ -80,7 +81,21 @@ public struct ROMImage: Sendable {
         return (w & 0xFF00_0000) == 0xEA00_0000 || (w & 0xFFFF_F000) == 0xE59F_F000
     }
 
+    /// Whether a version string names an operating system ROM: Acorn's,
+    /// or ArcLibre, the free one rebuilt from RISC OS's public sources.
+    static func isOS(_ version: String) -> Bool {
+        version.hasPrefix("RISC OS") || version.hasPrefix("Arthur") || version.hasPrefix("ArcLibre")
+    }
+
     static func findVersion(_ d: [UInt8]) -> String {
+        // ArcLibre says it's compatible with RISC OS 3.11, so it's told by
+        // its kernel's *Help title ("ArcLibre<tab>0.80 (28 Oct 2026)").
+        let arcLibre = Array("ArcLibre\t".utf8)
+        for i in 0..<max(0, min(d.count, 0x10000) - 48) where d[i] == arcLibre[0] && Array(d[i..<(i + arcLibre.count)]) == arcLibre {
+            var j = i + arcLibre.count, s = "ArcLibre "
+            while j < i + 48 && d[j] >= 0x20 && d[j] < 0x7F { s.append(Character(UnicodeScalar(d[j]))); j += 1 }
+            if s.dropFirst(9).first?.isNumber == true { return s.trimmingCharacters(in: .whitespaces) }
+        }
         let needles = ["RISC OS", "Arthur"]
         for needle in needles {
             let n = Array(needle.utf8)

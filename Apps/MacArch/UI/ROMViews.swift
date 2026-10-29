@@ -224,7 +224,7 @@ struct WelcomeView: View {
                 Text("MacArch").font(.system(size: 46, weight: .bold, design: .rounded))
                 Text("The Acorn Archimedes, on your Mac").font(.title3).foregroundStyle(.secondary)
             }
-            Text("MacArch needs a RISC OS ROM, which it can't include. Add ROM images you own: they're copied into MacArch's own folder, so the originals can go anywhere afterwards.")
+            Text("MacArch comes with ArcLibre, a free RISC OS rebuilt from its public sources. For Acorn's own RISC OS 2 or 3, add ROM images you own: they're copied into MacArch's own folder, so the originals can go anywhere afterwards.")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 

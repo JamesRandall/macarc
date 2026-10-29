@@ -118,6 +118,7 @@ final class ROMLibrary {
     /// Takes a ROM off the list; MacArch's own copy is moved to the Trash.
     func remove(_ path: String) {
         let settings = AppSettings.shared
+        if let sha = sha(of: path), ROMImporter.known[sha]?.title.hasPrefix("ArcLibre") == true { settings.declineBundledROM(sha256: sha) }
         settings.removeROM(path)
         if path.hasPrefix(Self.directory) { try? FileManager.default.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil) }
         details[path] = nil

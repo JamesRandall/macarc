@@ -1,15 +1,5 @@
 # What's New in MacArch
 
-- **Disc contents:** File ▸ Show Disc Contents (⇧⌘I) lists the files on a floppy (ADFS L, M, S, D, E or F) or a hard disc, as MacBeeb's does. Drag files out to Finder, named with their RISC OS types (`ReadMe,fff`), or drag Mac files and folders in. Rename, retype, relock and delete files, make directories, and set the disc's name and boot option, all with undo. RISC OS sees a floppy's changes straight away; a hard disc's restart the machine. File ▸ New Disc puts in a blank one. Copy protected discs open too, and changing them leaves their protection alone.
-
-- **View ▸ Border:** show the full border around the desktop, a little of it, or none.
-
-- **Window ▸ Make 16:9:** makes the machine's window 16:9 at its height.
-
-- **Import from Welcome:** Import Machine… starts a JSON configuration directly from the Archimedes card; the Machine menu import also works before a machine is running.
-
-- **Machine configurations:** import/export JSON from the Machine menu or Configure Machine, with current CMOS, relative paths and validation before restart.
-
 <!--
 One section per release, newest first: "## VERSION" (optionally "— DATE"),
 then a line of introduction if wanted, then "- " bullets. Inline Markdown
@@ -21,6 +11,14 @@ won't build a release without one.
 
 ## 0.4.0
 
+- **ArcLibre included:** MacArch now comes with [ArcLibre](https://github.com/acorn-playground/ArcLibre), a free RISC OS for the Archimedes rebuilt from Acorn's public sources, so it switches on straight away without finding a ROM. Add Acorn's RISC OS 2 or 3 as before; they become the default when you do.
+- **4 MB ROMs:** ROM images up to 4 MB, as the sockets are wired for: RISC OS 3.11 with an extension ROM after it, say, as one image or as chips.
+- **Follow the Mac pointer:** a second mouse mode (Machine ▸ Mouse, or Settings ▸ Mouse). RISC OS's pointer goes wherever the Mac's is, without capturing it, so you can move straight out of the window. Capturing the mouse is still there, and still the default.
+- **Disc contents:** File ▸ Show Disc Contents (⇧⌘I) lists the files on a floppy (ADFS L, M, S, D, E or F) or a hard disc, as MacBeeb's does. Drag files out to Finder, named with their RISC OS types (`ReadMe,fff`), or drag Mac files and folders in. Rename, retype, relock and delete files, make directories, and set the disc's name and boot option, all with undo. RISC OS sees a floppy's changes straight away; a hard disc's restart the machine. File ▸ New Disc puts in a blank one. Copy protected discs open too, and changing them leaves their protection alone.
+- **View ▸ Border:** show the full border around the desktop, a little of it, or none.
+- **Window ▸ Make 16:9:** makes the machine's window 16:9 at its height.
+- **Import from Welcome:** Import Machine… starts a JSON configuration directly from the Archimedes card; the Machine menu import also works before a machine is running.
+- **Machine configurations:** import/export JSON from the Machine menu or Configure Machine, with current CMOS, relative paths and validation before restart.
 - **Archimedes Classics:** the Game Library has a new shelf, a Top 25 of Archimedes games from Star Fighter 3000 and Zarch to Lemmings and Repton 4, with their box art. Get one from the [Archimedes Archive](https://arcarc.top/) in your browser and MacArch adds its discs as they download. Play sets up the machine it wants and boots straight into the game, putting later discs in when it asks for them, or with Machine ▸ Insert Disc 2 (⌥⌘N).
 - **Add ROMs** works again from Machine ▸ ROM, and the welcome screen has an Add ROMs… button.
 
