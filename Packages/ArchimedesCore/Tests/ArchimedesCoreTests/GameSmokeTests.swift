@@ -11,6 +11,12 @@ import XCTest
 /// 100+ s of guest time each, so they are opt-in:
 ///     MACARCH_GAME_TESTS=1 swift test -c release -Xswiftc -enable-testing --filter GameSmokeTests
 final class GameSmokeTests: XCTestCase {
+    #if !canImport(ObjectiveC)
+    /// swift-corelibs-xctest (Linux) has no plain initialiser, and other
+    /// tests make one of these for its helpers.
+    convenience init() { self.init(name: "helper", testClosure: { _ in }) }
+    #endif
+
     static let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../..").standardized
     static let reports = root.appendingPathComponent("tests/reports/games")
 

@@ -206,7 +206,7 @@ public enum ADFSExport {
         } else {
             try Data(volume.contents(of: e.name, at: path)).write(to: url)
         }
-        if let date = e.date { try? fm.setAttributes([.modificationDate: date], ofItemAtPath: url.path) }
+        if let date = e.date { HostFiles.setModificationDate(date, path: url.path) }
         return skipped
     }
 }

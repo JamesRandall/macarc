@@ -1,6 +1,9 @@
 // Host networking (URLSession, Keychain, Dispatch): not part of WebAssembly builds.
 #if !os(WASI)
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 // The service's HTTP API (cloudflare-econet's econet/docs/protocol.md): making,
 // joining and managing rooms. Credentials only in Authorization headers.

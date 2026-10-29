@@ -76,7 +76,14 @@ public protocol AgentContext: AnyObject {
 
 public enum AgentPaths {
     public static var supportDirectory: String {
-        (NSHomeDirectory() as NSString).appendingPathComponent("Library/Application Support/MacArch")
+        #if os(Linux)
+        // LinuxArch's, in the XDG data directory.
+        let data = ProcessInfo.processInfo.environment["XDG_DATA_HOME"].flatMap { $0.hasPrefix("/") ? $0 : nil }
+            ?? (NSHomeDirectory() as NSString).appendingPathComponent(".local/share")
+        return (data as NSString).appendingPathComponent("linuxarch")
+        #else
+        return (NSHomeDirectory() as NSString).appendingPathComponent("Library/Application Support/MacArch")
+        #endif
     }
 
     /// Directories tools may read and write.

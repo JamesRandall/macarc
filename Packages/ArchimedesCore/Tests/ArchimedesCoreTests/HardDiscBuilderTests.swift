@@ -11,7 +11,12 @@ final class HardDiscBuilderTests: XCTestCase {
         func le32(_ v: UInt32) -> [UInt8] { (0..<4).map { UInt8((v >> (8 * $0)) & 0xFF) } }
         var out: [UInt8] = [], central: [UInt8] = []
         for m in members {
+            #if canImport(Darwin)
             let body = m.deflate ? [UInt8](try! (Data(m.data) as NSData).compressed(using: .zlib) as Data) : m.data
+            #else
+            // A zlib stream less its 2-byte header and Adler-32 is raw deflate.
+            let body = m.deflate ? Array(Zlib.compress(m.data).dropFirst(2).dropLast(4)) : m.data
+            #endif
             var extra: [UInt8] = []
             if let (load, exec) = m.acorn {
                 extra = le16(0x4341) + le16(20) + Array("ARC0".utf8) + le32(load) + le32(exec) + le32(3) + le32(0)

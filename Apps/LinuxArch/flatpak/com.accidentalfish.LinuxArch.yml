@@ -1,0 +1,69 @@
+# LinuxArch as a Flatpak: `make flatpak`, or
+#   flatpak-builder --user --install --install-deps-from=flathub .build/flatpak Apps/LinuxArch/flatpak/com.accidentalfish.LinuxArch.yml
+#
+# Built with swift.org's toolchain (it's only needed to build: the programs
+# carry the Swift runtime), on GNOME 50's runtime (libadwaita 1.9).
+# LINUXARCH_OFFLINE leaves out the Mac app's Sparkle dependency, which would
+# need the network.
+id: com.accidentalfish.LinuxArch
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+command: linuxarch
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  # OpenGL for the picture.
+  - --device=dri
+  - --socket=pulseaudio
+  # Internet Econet rooms, and the debug adapter's port that editors connect to.
+  - --share=network
+  # Disc and hard disc images opened by path (recent discs, hard discs
+  # fitted, states that name their discs), not only through file choosers.
+  - --filesystem=home
+build-options:
+  append-path: /app/swift/usr/bin
+  env:
+    LINUXARCH_OFFLINE: '1'
+modules:
+  - name: swift
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/swift
+      - cp -a usr /app/swift/
+    cleanup:
+      - /swift
+    sources:
+      - type: archive
+        url: https://download.swift.org/swift-6.4.1-release/ubuntu2404/swift-6.4.1-RELEASE/swift-6.4.1-RELEASE-ubuntu24.04.tar.gz
+        sha256: 7d246c7114077ad01dba4ad897628446ada4c489d6c7dbcf39ae3f25cbe17e8b
+
+  - name: SDL3
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DSDL_TESTS=OFF
+      - -DSDL_EXAMPLES=OFF
+      - -DSDL_INSTALL_TESTS=OFF
+    cleanup:
+      - /include
+      - /lib/cmake
+      - /lib/pkgconfig
+      - /share
+    sources:
+      - type: archive
+        url: https://github.com/libsdl-org/SDL/releases/download/release-3.4.2/SDL3-3.4.2.tar.gz
+        sha256: ef39a2e3f9a8a78296c40da701967dd1b0d0d6e267e483863ce70f8a03b4050c
+
+  - name: linuxarch
+    buildsystem: simple
+    build-commands:
+      - make install PREFIX=/app
+    sources:
+      - type: dir
+        path: ../../..
+        skip:
+          - .build
+          - .flatpak-builder
+          - web/node_modules

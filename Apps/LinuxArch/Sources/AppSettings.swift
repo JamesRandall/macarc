@@ -1,0 +1,188 @@
+import ArchimedesCore
+import Foundation
+import MacArchAgent
+import Observation
+
+/// The machine's saved hardware choices and the app's file locations.
+/// Shared by all windows; new windows start with the last choices. (The
+/// Mac app's AppSettings, with `Preferences` for UserDefaults.)
+@MainActor
+@Observable
+final class AppSettings {
+    static let shared = AppSettings()
+    @ObservationIgnored private let d = Preferences.standard
+
+    /// Self-test runs (LINUXARCH_SELFTEST) keep their settings, CMOS
+    /// profiles and hard discs apart from the user's.
+    nonisolated static let isSelfTest = ProcessInfo.processInfo.environment["LINUXARCH_SELFTEST"] != nil
+
+    /// The ROM in use (a file, or a folder of chip files).
+    var romPath: String? { didSet { d.set(romPath, forKey: "romPath"); if let romPath { addROM(romPath) } } }
+    /// The model new windows start as.
+    var model: MachineModel { didSet { d.set(model.rawValue, forKey: "model") } }
+    /// ROMs the user has chosen before, for the Machine menu's picker.
+    private(set) var romLibrary: [ROMEntry] = []
+    private(set) var recentDiscs: [String] { didSet { d.set(recentDiscs, forKey: "recentDiscs") } }
+
+    struct ROMEntry: Hashable, Identifiable {
+        var path: String
+        var version: String
+        var id: String { path }
+    }
+
+    static func ramLabel(_ kb: Int) -> String { kb < 1024 ? "\(kb) KB" : "\(kb / 1024) MB" }
+
+    // Memory, processor, monitor and hard discs are remembered for each model, so
+    // switching back to a model finds it as it was left.
+
+    func ramKB(for m: MachineModel) -> Int {
+        let v = d.object(forKey: "ramKB.\(m.rawValue)") as? Int
+        return v.flatMap { m.ramChoices.contains($0) ? $0 : nil } ?? m.defaultRAMKB
+    }
+
+    func setRAMKB(_ kb: Int, for m: MachineModel) { d.set(kb, forKey: "ramKB.\(m.rawValue)") }
+
+    func cpu(for m: MachineModel) -> CPUType {
+        d.string(forKey: "cpu.\(m.rawValue)").flatMap(CPUType.init(rawValue:)).flatMap { m.cpuChoices.contains($0) ? $0 : nil } ?? m.defaultCPU
+    }
+
+    func setCPU(_ c: CPUType, for m: MachineModel) { d.set(c.rawValue, forKey: "cpu.\(m.rawValue)") }
+
+    func monitor(for m: MachineModel) -> MonitorType {
+        d.string(forKey: "monitor.\(m.rawValue)").flatMap(MonitorType.init(rawValue:)).flatMap { m.monitorChoices.contains($0) ? $0 : nil } ?? .standard
+    }
+
+    func setMonitor(_ t: MonitorType, for m: MachineModel) { d.set(t.rawValue, forKey: "monitor.\(m.rawValue)") }
+
+    /// Hard disc image paths by drive ("" for none).
+    func hardDiscs(for m: MachineModel) -> [String?] {
+        let a = d.stringArray(forKey: "hardDiscs.\(m.rawValue)") ?? []
+        return (0..<m.hardDiscSlots).map { $0 < a.count && !a[$0].isEmpty ? a[$0] : nil }
+    }
+
+    func setHardDiscs(_ paths: [String?], for m: MachineModel) {
+        d.set(paths.map { $0 ?? "" }, forKey: "hardDiscs.\(m.rawValue)")
+    }
+
+    /// The Archimedes mouse has three buttons: Select, Menu (the middle
+    /// one) and Adjust. What the right button does; the other of Menu and
+    /// Adjust is on the middle button.
+    enum SecondaryClick: String, CaseIterable, Identifiable {
+        case adjust, menu
+        var id: Self { self }
+        var name: String { self == .adjust ? "Adjust (right button)" : "Menu (middle button)" }
+    }
+    var secondaryClick: SecondaryClick {
+        didSet { d.set(secondaryClick.rawValue, forKey: "secondaryClick") }
+    }
+
+    /// How the PC's mouse drives the Archimedes': captured by a click and
+    /// moving it by how far it moves, or left free with RISC OS's pointer
+    /// following the desktop's.
+    enum MouseMode: String, CaseIterable, Identifiable {
+        case capture, follow
+        var id: Self { self }
+        var name: String { self == .capture ? "Capture the mouse" : "Follow the desktop pointer" }
+    }
+    var mouseMode: MouseMode {
+        didSet { d.set(mouseMode.rawValue, forKey: "mouseMode") }
+    }
+
+    /// Editors (VS Code) debug the first window's machine over the Debug
+    /// Adapter Protocol on this localhost port. Takes effect next launch.
+    var debugAdapterEnabled: Bool { didSet { d.set(debugAdapterEnabled, forKey: "debugAdapterEnabled") } }
+    var debugAdapterPort: Int { didSet { d.set(debugAdapterPort, forKey: "debugAdapterPort") } }
+
+    private init() {
+        romPath = d.string(forKey: "romPath")
+        model = d.string(forKey: "model").flatMap(MachineModel.init(rawValue:)) ?? .a3000
+        recentDiscs = d.stringArray(forKey: "recentDiscs") ?? []
+        secondaryClick = d.string(forKey: "secondaryClick").flatMap(SecondaryClick.init(rawValue:)) ?? .adjust
+        mouseMode = d.string(forKey: "mouseMode").flatMap(MouseMode.init(rawValue:)) ?? .capture
+        debugAdapterEnabled = d.object(forKey: "debugAdapterEnabled") as? Bool ?? true
+        debugAdapterPort = d.integer(forKey: "debugAdapterPort") == 0 ? Int(DAPServer.defaultPort) : d.integer(forKey: "debugAdapterPort")
+        for p in d.stringArray(forKey: "romLibrary") ?? [] { addROM(p, save: false) }
+        // Developer convenience: launched from the project with no ROM chosen.
+        if romPath == nil {
+            let dev = FileManager.default.currentDirectoryPath + "/roms"
+            for name in ["riscos3_11", "riscos2_00"] where FileManager.default.fileExists(atPath: dev + "/" + name) {
+                addROM(dev + "/" + name)
+            }
+            romPath = romLibrary.max { $0.version.localizedStandardCompare($1.version) == .orderedAscending }?.path
+        }
+        if let romPath { addROM(romPath, save: false) }
+        addBundledArcLibre()
+        // (Observers don't run in init: saved by hand.)
+        if romPath.map({ !FileManager.default.fileExists(atPath: $0) }) ?? true {
+            romPath = romLibrary.max { $0.version.localizedStandardCompare($1.version) == .orderedAscending }?.path
+            d.set(romPath, forKey: "romPath")
+        }
+    }
+
+    /// ArcLibre, the free ROM rebuilt from RISC OS's public sources, comes
+    /// with LinuxArch (when the build has it) so that it works without one
+    /// of Acorn's. It joins the ROM list (replacing an older ArcLibre put
+    /// there) unless it was taken off; Acorn's ROMs stay the default when
+    /// there are any.
+    private func addBundledArcLibre() {
+        guard let url = AppPaths.resource("ArcLibre/ArcLibre.rom"),
+              let rom = try? ROMImage.load(paths: [url.path]) else { return }
+        if d.stringArray(forKey: "declinedBundledROMs")?.contains(rom.sha256) == true { return }
+        let installed = romLibrary.compactMap { e in (try? ROMImage.load(paths: [e.path])).map { (e, $0.sha256) } }
+        if installed.contains(where: { $0.1 == rom.sha256 }) { return }
+        let directory = (Self.supportDirectory as NSString).appendingPathComponent("ROMs")
+        guard let path = try? ROMImporter.install(rom, into: directory) else { return }
+        addROM(path)
+        for (e, _) in installed where e.version.hasPrefix("ArcLibre") && e.path.hasPrefix(directory) {
+            if romPath == e.path { romPath = path; d.set(path, forKey: "romPath") }
+            removeROM(e.path)
+            try? FileManager.default.removeItem(atPath: e.path)
+        }
+    }
+
+    /// The bundled ArcLibre was taken off the ROM list: don't put it back.
+    func declineBundledROM(sha256: String) {
+        d.set((d.stringArray(forKey: "declinedBundledROMs") ?? []) + [sha256], forKey: "declinedBundledROMs")
+    }
+
+    /// Adds a ROM to the library if it loads; returns its version.
+    @discardableResult
+    func addROM(_ path: String, save: Bool = true) -> String? {
+        if let e = romLibrary.first(where: { $0.path == path }) { return e.version }
+        guard let rom = try? ROMImage.load(paths: [path]) else { return nil }
+        romLibrary.append(ROMEntry(path: path, version: rom.versionString))
+        romLibrary.sort { $0.version < $1.version }
+        if save { d.set(romLibrary.map(\.path), forKey: "romLibrary") }
+        return rom.versionString
+    }
+
+    func removeROM(_ path: String) {
+        romLibrary.removeAll { $0.path == path }
+        d.set(romLibrary.map(\.path), forKey: "romLibrary")
+    }
+
+    /// `$XDG_DATA_HOME/linuxarch` (~/.local/share/linuxarch): the Mac app's
+    /// Application Support/MacArch. Self-tests have a folder of their own.
+    nonisolated static var supportDirectory: String {
+        if isSelfTest { return (NSTemporaryDirectory() as NSString).appendingPathComponent("LinuxArch-selftest") }
+        return AppPaths.dataHome.appendingPathComponent("linuxarch").path
+    }
+
+    /// CMOS is kept per model and ROM, so incompatible OS versions never
+    /// share settings and each machine keeps its own configuration.
+    nonisolated static func cmosPath(for rom: ROMImage, model: MachineModel) -> String {
+        let name = model.rawValue.replacingOccurrences(of: "/", with: "-")
+        return (supportDirectory as NSString).appendingPathComponent("Profiles/\(name)-\(rom.sha256.prefix(16))/cmos.bin")
+    }
+
+    /// Where new hard disc images go unless the user picks elsewhere.
+    nonisolated static var hardDiscDirectory: String { (supportDirectory as NSString).appendingPathComponent("Hard Discs") }
+
+    func addRecent(_ p: String) {
+        var r = recentDiscs.filter { $0 != p }
+        r.insert(p, at: 0)
+        recentDiscs = Array(r.prefix(10))
+    }
+
+    func clearRecents() { recentDiscs = [] }
+}

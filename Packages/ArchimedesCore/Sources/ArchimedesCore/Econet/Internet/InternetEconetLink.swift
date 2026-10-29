@@ -1,6 +1,9 @@
 // Host networking (URLSession, Keychain, Dispatch): not part of WebAssembly builds.
 #if !os(WASI)
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Which Internet Econet room a network is in, as its file keeps it:
 /// nothing secret (the credentials are in the Keychain, by service and

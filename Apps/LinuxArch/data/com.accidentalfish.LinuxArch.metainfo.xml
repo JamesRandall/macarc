@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.accidentalfish.LinuxArch</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>LinuxArch</name>
+  <summary>An Acorn Archimedes emulator</summary>
+  <developer id="com.accidentalfish">
+    <name>James Randall</name>
+  </developer>
+  <description>
+    <p>
+      LinuxArch is MacArch for Linux: an emulator of the Acorn Archimedes 300
+      and 400 series, the A540, the A3000, and the A5000, A3010, A3020 and
+      A4000, with the ARM2, ARM3 or ARM250, running RISC OS 2 or 3 from a ROM
+      you own, or ArcLibre, the free RISC OS rebuilt from Acorn's public
+      sources.
+    </p>
+    <ul>
+      <li>Floppies (ADFS D, E, F, L, M and S, and protected JFD and HFE originals), with their changes saved back or to a new image</li>
+      <li>ST506 and IDE hard discs: new, from files, resized, with files added</li>
+      <li>A minute of rewind, save states, quick saves and screenshots</li>
+      <li>The keyboard by position or by character, custom keys, and the three-button mouse captured or following the desktop's pointer</li>
+      <li>Sharp, smooth or CRT display, with the full border, a little of it or none</li>
+      <li>ROMs found in images, chip sets, folders and ZIP archives</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">com.accidentalfish.LinuxArch.desktop</launchable>
+  <url type="homepage">https://github.com/JamesRandall/macarc</url>
+  <url type="vcs-browser">https://github.com/JamesRandall/macarc</url>
+  <content_rating type="oars-1.1"/>
+  <categories>
+    <category>Game</category>
+    <category>Emulator</category>
+  </categories>
+  <keywords>
+    <keyword>Acorn</keyword>
+    <keyword>Archimedes</keyword>
+    <keyword>RISC OS</keyword>
+    <keyword>emulator</keyword>
+  </keywords>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <provides>
+    <binary>linuxarch</binary>
+    <binary>macarch-mcp</binary>
+    <binary>macarch-cli</binary>
+    <mediatype>application/x-acorn-adfs-image</mediatype>
+    <mediatype>application/x-acorn-jfd-image</mediatype>
+    <mediatype>application/x-hfe-floppy-image</mediatype>
+    <mediatype>application/x-macarch-state</mediatype>
+  </provides>
+  <releases>
+    <release version="0.1.0" date="2026-10-29">
+      <description>
+        <p>The first release: MacArch's Archimedes, on Linux.</p>
+      </description>
+    </release>
+  </releases>
+</component>

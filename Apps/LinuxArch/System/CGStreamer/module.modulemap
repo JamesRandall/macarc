@@ -1,0 +1,9 @@
+module CGStreamer [system] {
+    header "shim.h"
+    link "gstapp-1.0"
+    link "gstbase-1.0"
+    link "gstreamer-1.0"
+    link "gobject-2.0"
+    link "glib-2.0"
+    export *
+}

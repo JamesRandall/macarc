@@ -23,7 +23,11 @@ final class EconetTrafficTests: XCTestCase {
     }
 
     static let fixtures: Fixtures = {
-        let url = Bundle.module.resourceURL!.appendingPathComponent("Resources/internet-econet/traffic.json")
+        // The copied folder keeps its name in an Apple bundle; on Linux it
+        // merges into the bundle's own Resources.
+        let url = ["Resources/internet-econet/traffic.json", "internet-econet/traffic.json"]
+            .map { Bundle.module.resourceURL!.appendingPathComponent($0) }
+            .first { FileManager.default.fileExists(atPath: $0.path) }!
         return try! JSONDecoder().decode(Fixtures.self, from: Data(contentsOf: url))
     }()
 

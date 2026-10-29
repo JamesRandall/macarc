@@ -121,6 +121,12 @@ final class VIDCTests: XCTestCase {
 }
 
 final class FloppyTests: XCTestCase {
+    #if !canImport(ObjectiveC)
+    /// swift-corelibs-xctest (Linux) has no plain initialiser, and other
+    /// tests make one of these for its helpers.
+    convenience init() { self.init(name: "helper", testClosure: { _ in }) }
+    #endif
+
     func syntheticDisc() -> FloppyImage {
         var data = [UInt8](repeating: 0, count: 819_200)
         for i in 0..<data.count { data[i] = UInt8(truncatingIfNeeded: i / 1024) }
@@ -418,6 +424,12 @@ final class TrackLayoutTests: XCTestCase {
 }
 
 final class SnapshotTests: XCTestCase {
+    #if !canImport(ObjectiveC)
+    /// swift-corelibs-xctest (Linux) has no plain initialiser, and other
+    /// tests make one of these for its helpers.
+    convenience init() { self.init(name: "helper", testClosure: { _ in }) }
+    #endif
+
     func fingerprint(_ m: Machine) -> [String] {
         var ramHash: UInt64 = 0xCBF2_9CE4_8422_2325
         for i in 0..<m.memc.ramSize { ramHash = (ramHash ^ UInt64(m.memc.ram[i])) &* 0x100_0000_01B3 }

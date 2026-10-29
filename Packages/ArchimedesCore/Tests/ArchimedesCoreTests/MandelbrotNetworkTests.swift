@@ -134,6 +134,12 @@ final class MandelbrotRig {
 }
 
 final class MandelbrotNetworkTests: XCTestCase {
+    #if !canImport(ObjectiveC)
+    /// swift-corelibs-xctest (Linux) has no plain initialiser, and other
+    /// tests make one of these for its helpers.
+    convenience init() { self.init(name: "helper", testClosure: { _ in }) }
+    #endif
+
     static let picture = MandelbrotReference.colours()
 
     func rig(workers: [Int]) throws -> MandelbrotRig {

@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=LinuxArch
+GenericName=Acorn Archimedes Emulator
+Comment=The Acorn Archimedes, A3000 and A5000 families, running RISC OS
+Exec=linuxarch %U
+Icon=com.accidentalfish.LinuxArch
+Terminal=false
+Categories=Game;Emulator;
+Keywords=Acorn;Archimedes;RISC OS;ARM;A3000;A5000;emulator;retro;
+MimeType=application/x-acorn-adfs-image;application/x-acorn-jfd-image;application/x-hfe-floppy-image;application/x-macarch-state;x-scheme-handler/macarch;
+StartupNotify=true
+SingleMainWindow=false
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=linuxarch --new-window

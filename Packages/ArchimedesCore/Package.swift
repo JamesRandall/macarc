@@ -44,3 +44,13 @@ let package = Package(
     ],
     swiftLanguageModes: [.v5]
 )
+
+#if os(Linux)
+// Linux's Swift has no zlib module (macOS's SDK has one): the system's
+// libz (zlib1g-dev), for the core's deflate and the tests that check it.
+package.targets.append(.systemLibrary(name: "zlib", path: "Sources/zlib", pkgConfig: "zlib",
+                                      providers: [.apt(["zlib1g-dev"])]))
+for target in package.targets where target.name == "ArchimedesCore" || target.name == "ArchimedesCoreTests" {
+    target.dependencies.append(.target(name: "zlib", condition: .when(platforms: [.linux])))
+}
+#endif

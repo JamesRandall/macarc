@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The Archimedes' files LinuxArch opens. ADFS images share LinuxBeeb's
+     type (.adf is also the Amiga's, which shared-mime-info has); HFE images
+     already have a type of their own. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-acorn-adfs-image">
+    <comment>Acorn ADFS disc image</comment>
+    <generic-icon name="media-floppy"/>
+    <glob pattern="*.adf"/>
+    <glob pattern="*.ads"/>
+    <glob pattern="*.adm"/>
+    <glob pattern="*.adl"/>
+  </mime-type>
+  <mime-type type="application/x-acorn-jfd-image">
+    <comment>Acorn protected floppy image (JFD)</comment>
+    <generic-icon name="media-floppy"/>
+    <glob pattern="*.jfd"/>
+  </mime-type>
+  <mime-type type="application/x-macarch-state">
+    <comment>Archimedes save state</comment>
+    <generic-icon name="application-x-generic"/>
+    <glob pattern="*.macarchstate"/>
+  </mime-type>
+</mime-info>

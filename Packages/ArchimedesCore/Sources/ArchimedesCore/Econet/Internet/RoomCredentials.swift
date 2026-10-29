@@ -1,7 +1,9 @@
 // Host networking (URLSession, Keychain, Dispatch): not part of WebAssembly builds.
 #if !os(WASI)
 import Foundation
+#if canImport(Security)
 import Security
+#endif
 
 // A room's secrets: the member token (to connect), and for the host the
 // owner token. Kept in the Keychain, scoped to the service's origin and the
@@ -26,6 +28,7 @@ public protocol RoomCredentialStore: Sendable {
     func remove(service: URL, roomId: String)
 }
 
+#if canImport(Security)
 /// The macOS Keychain: one generic password per service origin and room.
 public struct KeychainCredentialStore: RoomCredentialStore {
     static let itemService = "MacArch Internet Econet"
@@ -74,6 +77,57 @@ public struct KeychainCredentialStore: RoomCredentialStore {
 
     public func remove(service: URL, roomId: String) {
         SecItemDelete(query(service, roomId) as CFDictionary)
+    }
+}
+
+#endif
+
+/// A file only its owner can read (0600), for hosts without a Keychain
+/// (Linux): every room's credentials in one JSON object, by service origin
+/// and room.
+public final class FileCredentialStore: RoomCredentialStore, @unchecked Sendable {
+    private let lock = NSLock()
+    public let path: String
+
+    public init(path: String) { self.path = path }
+
+    private func key(_ service: URL, _ roomId: String) -> String { "\(InternetEconetService.origin(service)) \(roomId)" }
+
+    private func load() -> [String: RoomCredentials] {
+        guard let d = FileManager.default.contents(atPath: path) else { return [:] }
+        return (try? JSONDecoder().decode([String: RoomCredentials].self, from: d)) ?? [:]
+    }
+
+    private func store(_ items: [String: RoomCredentials]) throws {
+        let dir = (path as NSString).deletingLastPathComponent
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let d = try JSONEncoder().encode(items)
+        // Made private before anything secret is in it.
+        if !FileManager.default.fileExists(atPath: path) {
+            _ = FileManager.default.createFile(atPath: path, contents: nil, attributes: [.posixPermissions: 0o600])
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+        try d.write(to: URL(fileURLWithPath: path))
+    }
+
+    public func credentials(service: URL, roomId: String) -> RoomCredentials? {
+        lock.withLock { load()[key(service, roomId)] }
+    }
+
+    public func save(_ credentials: RoomCredentials, service: URL, roomId: String) throws {
+        try lock.withLock {
+            var items = load()
+            items[key(service, roomId)] = credentials
+            try store(items)
+        }
+    }
+
+    public func remove(service: URL, roomId: String) {
+        lock.withLock {
+            var items = load()
+            guard items.removeValue(forKey: key(service, roomId)) != nil else { return }
+            try? store(items)
+        }
     }
 }
 

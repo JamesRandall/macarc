@@ -149,7 +149,7 @@ public final class ADFSFileStore: ADFSStore {
     public let sectorSize: Int
 
     public init(path: String, sectorSize: Int, writable: Bool) throws {
-        fd = Darwin.open(path, writable ? O_RDWR : O_RDONLY)
+        fd = HostFiles.openFD(path, writable ? O_RDWR : O_RDONLY)
         guard fd >= 0 else { throw HardDiscError.cannotOpen(path) }
         var st = stat()
         fstat(fd, &st)

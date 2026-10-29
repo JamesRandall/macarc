@@ -67,10 +67,15 @@ public final class LockstepWorkers: @unchecked Sendable {
     /// the rest of the Mac.
     public static let maxThreads: Int = {
         var cores: Int32 = 0
+        #if canImport(Darwin)
         var size = MemoryLayout<Int32>.size
         if sysctlbyname("hw.perflevel0.physicalcpu", &cores, &size, nil, 0) != 0 || cores <= 0 {
             cores = Int32(ProcessInfo.processInfo.activeProcessorCount)
         }
+        #else
+        // (No performance levels to ask about: every core counts.)
+        cores = Int32(ProcessInfo.processInfo.activeProcessorCount)
+        #endif
         return max(1, Int(cores) - 1)
     }()
 

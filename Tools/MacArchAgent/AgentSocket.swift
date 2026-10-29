@@ -1,5 +1,15 @@
+#if canImport(Darwin)
 import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Foundation
+
+#if canImport(Glibc)
+private let streamSocket = Int32(SOCK_STREAM.rawValue)
+#else
+private let streamSocket = SOCK_STREAM
+#endif
 
 /// The local socket the app serves agent tools on, so `macarch-mcp --attach`
 /// can drive the machine you are watching. One JSON object per line each
@@ -25,10 +35,14 @@ public enum AgentSocket {
     }
 
     static func connect(_ path: String) -> Int32? {
-        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        let fd = socket(AF_UNIX, streamSocket, 0)
         guard fd >= 0 else { return nil }
         var a = address(path)
+        #if canImport(Darwin)
         let r = withUnsafePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
+        #else
+        let r = withUnsafePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Glibc.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
+        #endif
         if r != 0 { close(fd); return nil }
         return fd
     }
@@ -45,7 +59,11 @@ public enum AgentSocket {
                     return String(decoding: line, as: UTF8.self)
                 }
                 var chunk = [UInt8](repeating: 0, count: 65536)
+                #if canImport(Darwin)
                 let n = Darwin.read(fd, &chunk, chunk.count)
+                #else
+                let n = Glibc.read(fd, &chunk, chunk.count)
+                #endif
                 guard n > 0 else { return nil }
                 buffer.append(contentsOf: chunk[0..<n])
             }
@@ -58,7 +76,11 @@ public enum AgentSocket {
         return d.withUnsafeBytes { buf in
             var off = 0
             while off < buf.count {
+                #if canImport(Darwin)
                 let n = Darwin.write(fd, buf.baseAddress! + off, buf.count - off)
+                #else
+                let n = Glibc.write(fd, buf.baseAddress! + off, buf.count - off)
+                #endif
                 if n <= 0 { return false }
                 off += n
             }
@@ -89,7 +111,7 @@ public final class AgentSocketServer: @unchecked Sendable {
             throw StartError.inUse
         }
         unlink(path)
-        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        let fd = socket(AF_UNIX, streamSocket, 0)
         guard fd >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
         var a = AgentSocket.address(path)
         let r = withUnsafePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
