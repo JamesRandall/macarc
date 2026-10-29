@@ -90,7 +90,10 @@ tests/scripts/build-app.sh                 # build/MacArch.app (ad hoc signed; i
 NOTARISE=0 scripts/release.sh 0.1.0        # universal DMG and zip in build/releases/0.1.0, not notarised
 scripts/release.sh 0.1.0                   # Developer ID signed, notarised and stapled, plus appcast.xml
 scripts/release.sh 0.1.0 --publish         # ...then tag v0.1.0 and make the GitHub release
+LINUX=0 scripts/release.sh 0.1.0           # without LinuxArch
+scripts/release-linux.sh                   # just LinuxArch's .debs, in build/releases/linux
 ```
+The release script also builds LinuxArch's `.deb` packages for amd64 and arm64 with `scripts/release-linux.sh`, in Ubuntu 26.04 Docker containers (`Apps/LinuxArch/docker/Dockerfile`; amd64 is emulated on Apple silicon, so slower), installs each in a plain container to check it, and attaches them to the same GitHub release. LinuxArch has the same version (`LinuxArchApp.version`, which the script checks) and its own notes: `Apps/LinuxArch/WHATSNEW.md` needs that version's section, which follows MacArch's in the release notes.
 Before a release, add a `## 0.1.0` section to `WHATSNEW.md` (newest first: an optional line of introduction, then `- ` bullets with inline Markdown). The release script won't build without it. It uses the section as the GitHub release notes and embeds it in the appcast, so it appears in Sparkle's update window. The app bundles the whole file. On the first launch after an update, it opens What's New with the releases since the version the user last ran marked New; Help ▸ What's New in MacArch opens it any time. A fresh install shows the welcome screen instead.
 A notarised release needs APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID and CSC_NAME in the environment, in `.env.local` (git-ignored) or in the file named by `MACARCH_ENV_FILE`. The icon is an Icon Composer document whose layers are drawn by `Tools/icon/draw.py`. ArcLibre is the only ROM bundled.
 

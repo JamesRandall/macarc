@@ -439,7 +439,7 @@ enum LaunchScreen: String, CaseIterable {
 /// About the app.
 enum AppInfo {
     static let id = "com.accidentalfish.LinuxArch"
-    static let version = "0.1.0"
+    static let version = "0.4.0"
     /// MacArch's, which LinuxArch is.
     static let repository = "https://github.com/JamesRandall/macarc"
     static let website = "https://jamesdrandall.com"

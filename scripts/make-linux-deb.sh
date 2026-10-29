@@ -2,6 +2,9 @@
 # Builds a Debian/Ubuntu package of LinuxArch: .build/deb/linuxarch_VERSION_ARCH.deb.
 #
 #   scripts/make-linux-deb.sh VERSION      (or: make deb)
+#   STAGE_ONLY=1 scripts/make-linux-deb.sh VERSION
+#       just .build/deb/stage, with its DEBIAN/control, for dpkg-deb to build
+#       elsewhere (scripts/release-linux.sh: under Rosetta, dpkg-deb's tar fails)
 #
 # The programs carry the Swift runtime, so the package depends only on the
 # system's libraries (found by dpkg-shlibdeps).
@@ -47,5 +50,6 @@ Description: Acorn Archimedes emulator
  CLI and MCP server sharing the same emulation.
 EOF
 
+[ -n "${STAGE_ONLY:-}" ] && { echo "$stage"; exit 0; }
 dpkg-deb --root-owner-group --build "$stage" "$package"
 echo "$package"

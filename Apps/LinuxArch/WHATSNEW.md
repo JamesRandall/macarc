@@ -7,7 +7,7 @@ line of introduction if wanted, then "- " bullets. Inline Markdown is fine.
 The app shows the sections since the version a user last ran.
 -->
 
-## 0.1.0 — 29 October 2026
+## 0.4.0 — 29 October 2026
 
 The first release: MacArch's Archimedes, as a GTK4 and libadwaita app.
 

@@ -4,6 +4,8 @@
 #   MacArch-VERSION.zip   (the stapled app, for Sparkle)
 #   appcast.xml           (the update feed, including earlier releases)
 #   notes.md              (this release's section of WHATSNEW.md)
+#   linux/                LinuxArch's .deb packages for amd64 and arm64, and
+#                         their notes (scripts/release-linux.sh, in Docker)
 #
 # WHATSNEW.md must have a "## VERSION" section: it becomes the GitHub
 # release's notes, Sparkle's update window, and Help > What's New.
@@ -13,11 +15,16 @@
 #   NOTARISE=0 scripts/release.sh VERSION   no credentials: universal build and
 #                                           DMG, signed with SIGN_IDENTITY (default
 #                                           ad hoc), not notarised
+#   LINUX=0 scripts/release.sh VERSION      without LinuxArch (no Docker needed)
+#
+# LinuxArch has the same version (LinuxArchApp.version) and its own notes
+# (Apps/LinuxArch/WHATSNEW.md); its packages go on the same GitHub release,
+# with its notes after MacArch's.
 #
 # Needs APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID and CSC_NAME
 # (the Developer ID Application identity, with or without that prefix), in
 # the environment or in an env file: .env.local, or the file named by
-# MACARCH_ENV_FILE. No ROMs are included: users supply their own.
+# MACARCH_ENV_FILE. The only ROM included is ArcLibre.
 #
 # The Sparkle signing key lives in the login keychain under the account
 # "macarch"; create it once with:
@@ -73,15 +80,26 @@ if [ -n "$(git status --porcelain)" ]; then
     [ -n "$PUBLISH" ] && { echo "release: commit them before publishing" >&2; exit 1; }
 fi
 
+OUT=build/releases/$VERSION
+rm -rf "$OUT"
+mkdir -p "$OUT/sparkle"
+printf '%s\n' "$NOTES" > "$OUT/notes.md"
+
+# LinuxArch first: it's the likelier to fail, and doesn't need notarising.
+if [ "$LINUX" != "0" ]; then
+    LINUX_VERSION=$(sed -n 's/.*static let version = "\(.*\)"/\1/p' Apps/LinuxArch/Sources/LinuxArchApp.swift)
+    [ "$LINUX_VERSION" = "$VERSION" ] || {
+        echo "release: LinuxArch is version $LINUX_VERSION (LinuxArchApp.version), not $VERSION" >&2
+        exit 1
+    }
+    scripts/release-linux.sh "$OUT/linux"
+fi
+
 BUILD_NUMBER=$(git rev-list --count HEAD)
 export UNIVERSAL=1 SIGN_IDENTITY="$IDENTITY" VERSION BUILD_NUMBER SPARKLE_PUBLIC_KEY
 tests/scripts/build-app.sh
 
 APP=build/MacArch.app
-OUT=build/releases/$VERSION
-rm -rf "$OUT"
-mkdir -p "$OUT/sparkle"
-printf '%s\n' "$NOTES" > "$OUT/notes.md"
 
 notarise() {
     xcrun notarytool submit "$1" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" \
@@ -129,9 +147,17 @@ spctl --assess --type execute -v "$APP"
 echo "Built $OUT"
 
 if [ -n "$PUBLISH" ]; then
+    # The GitHub release's notes: MacArch's, then LinuxArch's.
+    cp "$OUT/notes.md" "$OUT/release-notes.md"
+    LINUX_DEBS=
+    if [ "$LINUX" != "0" ]; then
+        LINUX_DEBS=$(ls "$OUT"/linux/*.deb)
+        printf '\n## LinuxArch\n\n' >> "$OUT/release-notes.md"
+        cat "$OUT/linux/linuxarch-notes.md" >> "$OUT/release-notes.md"
+    fi
     git tag "v$VERSION"
     git push origin "v$VERSION"
-    gh release create "v$VERSION" --repo "$REPO" --title "MacArch $VERSION" --notes-file "$OUT/notes.md" \
-        "$DMG" "$ZIP" "$OUT/appcast.xml"
+    gh release create "v$VERSION" --repo "$REPO" --title "MacArch $VERSION" --notes-file "$OUT/release-notes.md" \
+        "$DMG" "$ZIP" "$OUT/appcast.xml" $LINUX_DEBS
     echo "Published https://github.com/$REPO/releases/tag/v$VERSION"
 fi
