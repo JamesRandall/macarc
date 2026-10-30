@@ -7,15 +7,15 @@ import XCTest
 final class ArcLibreTests: XCTestCase {
     static let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         .appendingPathComponent("../../../../Apps/MacArch/Resources/ArcLibre").standardized
-    static let path = folder.appendingPathComponent("arclibre-0.9-2mb.rom").path
-    static let fourMegabytePath = folder.appendingPathComponent("arclibre-0.9-4mb.rom").path
+    static let path = folder.appendingPathComponent("arclibre-0.9.1-2mb.rom").path
+    static let fourMegabytePath = folder.appendingPathComponent("arclibre-0.9.1-4mb.rom").path
 
     func testTheyAreRecognised() throws {
         for (path, size) in [(Self.path, 2 << 20), (Self.fourMegabytePath, 4 << 20)] {
             let rom = try ROMImage.load(paths: [path])
-            XCTAssertTrue(rom.versionString.hasPrefix("ArcLibre 0.9"), rom.versionString)
+            XCTAssertTrue(rom.versionString.hasPrefix("ArcLibre 0.91"), rom.versionString)
             XCTAssertEqual(rom.data.count, size)
-            XCTAssertEqual(ROMImporter.known[rom.sha256]?.title, "ArcLibre 0.9", "the bundled ArcLibre is a known ROM")
+            XCTAssertEqual(ROMImporter.known[rom.sha256]?.title, "ArcLibre 0.9.1", "the bundled ArcLibre is a known ROM")
             XCTAssertTrue(ROMImporter.hasVersion(rom))
             XCTAssertNotNil(ROMImporter.recognise([rom.data], sources: [path]), "it can be added as a ROM file")
         }

@@ -7,6 +7,11 @@ line of introduction if wanted, then "- " bullets. Inline Markdown is fine.
 The app shows the sections since the version a user last ran.
 -->
 
+## 0.5.2 — 30 October 2026
+
+- **!System and !Scrap on new hard discs:** a new hard disc, empty or made from files, has !System and !Scrap in its root directory, as on Acorn's own RISC OS 3.1 hard discs, so installers that add modules to `System:Modules` (Acorn C/C++'s, for example) and applications that pass files to each other work.
+- **ArcLibre 0.9.1:** the free RISC OS that comes with LinuxArch is now [ArcLibre 0.9.1](https://github.com/acorn-playground/arclibre/releases/tag/v0.9.1), whose extras disc has !System and !Scrap as well.
+
 ## 0.5.1 — 30 October 2026
 
 - Released alongside MacArch 0.5.1, which fixes a MacArch-only problem; LinuxArch is unchanged from 0.5.0.

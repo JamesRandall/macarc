@@ -816,7 +816,8 @@ final class MachineController {
         guard let (url, geometry) = await chooseNewHardDisc(drive: drive, heading: "New Hard Disc",
                                                             message: "A new hard disc, formatted and empty, for drive \(drive + 4). The machine will be power cycled.") else { return }
         do {
-            try ADFSFormatter.createFormattedImage(path: url.path, geometry: geometry, name: (url.lastPathComponent as NSString).deletingPathExtension)
+            // With !System (for installers that put modules in System:Modules) and !Scrap, as on Acorn's RISC OS 3.1 hard discs.
+            try ADFSFormatter.createFormattedImage(path: url.path, geometry: geometry, name: (url.lastPathComponent as NSString).deletingPathExtension, system: true)
         } catch {
             alert("Could not create the hard disc", "\(error)")
             return
@@ -866,7 +867,9 @@ final class MachineController {
                                                             message: "A new hard disc holding the \(items.count) files from \(Self.describe(sources)), for drive \(drive + 4). The machine will be power cycled.",
                                                             minimumBytes: needed) else { return }
         do {
-            try ADFSHardDiscBuilder.create(path: url.path, geometry: geometry, name: (url.lastPathComponent as NSString).deletingPathExtension, items: items)
+            let (files, directories) = ADFSFormatter.withSystem(items)
+            try ADFSHardDiscBuilder.create(path: url.path, geometry: geometry, name: (url.lastPathComponent as NSString).deletingPathExtension,
+                                           items: files, directories: directories)
         } catch {
             try? FileManager.default.removeItem(at: url)
             alert("Could not create the hard disc", "\(error)")

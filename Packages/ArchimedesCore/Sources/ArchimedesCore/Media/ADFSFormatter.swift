@@ -10,7 +10,13 @@ import Foundation
 ///   &C00  boot block: defect list, ST506 parameters, disc record, checksum
 ///   &E00  free space to the end of the drive
 public enum ADFSFormatter {
-    public static func createFormattedImage(path: String, geometry: HardDiscGeometry, name: String) throws {
+    /// `system`: with !System and !Scrap on it (see `withSystem`).
+    public static func createFormattedImage(path: String, geometry: HardDiscGeometry, name: String, system: Bool = false) throws {
+        if system {
+            let (items, directories) = withSystem([])
+            try ADFSHardDiscBuilder.create(path: path, geometry: geometry, name: name, items: items, directories: directories)
+            return
+        }
         let img = try HardDiscImage.create(path: path, geometry: geometry)
         let bytes = layout(geometry: geometry, name: name, id: discID(for: name))
         let size = geometry.sectorSize
@@ -21,6 +27,18 @@ public enum ADFSFormatter {
                       sector: lba % g.sectorsPerTrack, Array(bytes[start..<min(start + size, bytes.count)]))
         }
         img.synchronize()
+    }
+
+    /// `items` with !System and !Scrap added, set up as Acorn's RISC OS 3.1
+    /// hard discs had them (see `SystemApplications`), leaving out either if
+    /// `items` already has one. Installers such as Acorn C/C++'s put their
+    /// modules in System:Modules, so need a !System they can write to.
+    public static func withSystem(_ items: [ADFSHardDiscBuilder.Item], date: Date = Date())
+        -> (items: [ADFSHardDiscBuilder.Item], directories: [[String]]) {
+        let present = Set(items.compactMap { $0.path.first?.uppercased() })
+        let (apps, directories) = SystemApplications.items(date: date)
+        let keep = { (path: [String]) in !present.contains(path[0].uppercased()) }
+        return (items + apps.filter { keep($0.path) }, directories.filter(keep))
     }
 
     /// A stable disc id from the name (HForm picks one at random; any value will do).

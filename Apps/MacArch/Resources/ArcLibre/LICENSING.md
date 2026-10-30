@@ -547,7 +547,7 @@ modification notice. Alarm is distributed on its own floppy
 disc's ReadMe (`src/ArcLibre/alarm/ReadMe`) is new ArcLibre text under
 Apache-2.0. Releases ship it, with DOSFS and printing, on the 2 MB ROM's one
 extras floppy (`tools/build_extras_disc.py`), whose ReadMe
-(`src/ArcLibre/extras/ReadMe`) is also new ArcLibre text under Apache-2.0. Tokenisation is their source representation;
+(`src/ArcLibre/extras/ReadMe`) is also new ArcLibre text under Apache-2.0. So are the disc's !System and !Scrap (`src/ArcLibre/system`, with icons drawn by `tools/system_apps.py`), written to behave as Acorn's 1992 !System 0.56 and !Scrap 0.58 did; no Acorn file is copied. Tokenisation is their source representation;
 these files are not prebuilt ARM modules. Their UK messages, help text and
 window templates are selected from the same revisions. No separate asset
 licence is present in those selected resources. The flat Help template is the

@@ -9,6 +9,11 @@ release's section for the GitHub release and Sparkle's update window, and
 won't build a release without one.
 -->
 
+## 0.5.2
+
+- **!System and !Scrap on new hard discs:** New Hard Disc… and Create Machine's new hard discs put !System and !Scrap in the root directory, as on Acorn's own RISC OS 3.1 hard discs, so installers that add modules to `System:Modules` (Acorn C/C++'s, for example) and applications that pass files to each other work. A checkbox beside the drive size leaves them off. New Hard Disc from Files… adds them too, unless the files have their own.
+- **ArcLibre 0.9.1:** the free RISC OS that comes with MacArch is now [ArcLibre 0.9.1](https://github.com/acorn-playground/arclibre/releases/tag/v0.9.1), whose extras disc has !System and !Scrap as well, for machines without a hard disc.
+
 ## 0.5.1
 
 - **Fix:** a machine made with My Machines' Create Machine… now starts to the desktop. Its first start skipped setting up RISC OS's settings, so it came up at the `*` prompt in a black and white screen mode. A machine that started like that is put right the next time you start it.

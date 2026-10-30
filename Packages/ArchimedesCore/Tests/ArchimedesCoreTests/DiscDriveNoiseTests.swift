@@ -24,7 +24,7 @@ final class DiscDriveNoiseTests: XCTestCase {
 
     func testCataloguingAFloppyIsHeard() throws {
         let sounds = try XCTUnwrap(DiscDriveSounds.load(folder: Self.folder))
-        let disc = ArcLibreTests.folder.appendingPathComponent("arclibre-0.9-2mb-extras.adf").path
+        let disc = ArcLibreTests.folder.appendingPathComponent("arclibre-0.9.1-2mb-extras.adf").path
         for model in [MachineModel.a3000, .a5000] {
             var heard: [Double] = []
             for on in [false, true] {

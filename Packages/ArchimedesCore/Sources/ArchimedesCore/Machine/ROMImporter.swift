@@ -60,6 +60,10 @@ public enum ROMImporter {
             Known(title: "ArcLibre 0.9", note: "Free ROM from RISC OS's public sources, 29 Oct 2026 (2 MB)"),
         "d50d370b3254e1a159c26b19e893f2b1b6d440fee0a4b80669739e5449ca062e":
             Known(title: "ArcLibre 0.9", note: "Free ROM from RISC OS's public sources, with DOSFS, Alarm and printing, 29 Oct 2026 (4 MB)"),
+        "9e7aa465948c06802c24b46de00635214d6b410df9d788963bbfbf9ef07a4eb9":
+            Known(title: "ArcLibre 0.9.1", note: "Free ROM from RISC OS's public sources, 30 Oct 2026 (2 MB)"),
+        "2ae82b6d9342f20f4c400a97b5615332fb2d449ead9571566376c33169f016d6":
+            Known(title: "ArcLibre 0.9.1", note: "Free ROM from RISC OS's public sources, with DOSFS, Alarm and printing, 30 Oct 2026 (4 MB)"),
     ]
 
     /// Sizes a whole OS ROM comes in: Arthur and RISC OS 2 512 KB, RISC OS 3

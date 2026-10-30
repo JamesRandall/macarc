@@ -423,3 +423,35 @@ final class HardDiscBuilderTests: XCTestCase {
         }
     }
 }
+
+extension HardDiscBuilderTests {
+    /// A new drive with !System and !Scrap: RISC OS sees them, and running
+    /// their !Boot files (as the Filer does) loads their icons and points
+    /// System: and Wimp$Scrap at them.
+    func testNewDriveWithSystem() throws {
+        guard let dir = GameSmokeTests.romDir("riscos3_11") else { throw XCTSkip("RISC OS 3.11 ROM not present") }
+        let path = NSTemporaryDirectory() + "macarch-system-\(UUID().uuidString).hdf"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        try ADFSFormatter.createFormattedImage(path: path, geometry: HardDiscGeometry(cylinders: 615, heads: 4), name: "Sys", system: true)
+        XCTAssertEqual(Set(try Self.listing(path).keys), Set(["!System", "!Scrap"].flatMap { app in
+            ["!Boot", "!Run", "!Help", "!Sprites", "!Sprites22"].map { "\(app).\($0)" } }))
+        let existing = ADFSFormatter.withSystem([.init(path: ["!System", "!Boot"], data: [], type: 0xFEB)])
+        XCTAssertEqual(existing.items.filter { $0.path[0] == "!System" }.count, 1, "an existing !System is left alone")
+        XCTAssertEqual(existing.directories, [["!Scrap", "ScrapDir"]], "and !Scrap is still added")
+        var c = MachineConfiguration(model: .a440)
+        c.romPaths = [dir]
+        c.hardDiscs = [path]
+        c.powerOnKeys = [0x34]
+        let m = try Machine(configuration: c)
+        m.powerOn()
+        m.run(seconds: 25)
+        m.keyDown(0x0C); m.run(seconds: 0.1); m.keyUp(0x0C) // F12
+        m.run(seconds: 1)
+        m.scheduleTyping("*Run :4.$.!System.!Boot\n*Run :4.$.!Scrap.!Boot\n*Ex System:Modules\n*Show System$Path\n*Show Wimp$Scrap*\n", intervalMs: 40)
+        m.run(seconds: 15)
+        let text = m.recentText
+        XCTAssertTrue(text.contains("$.!System."), String(text.suffix(400)))
+        XCTAssertTrue(text.contains("$.!Scrap.ScrapDir.ScrapFile"), String(text.suffix(400)))
+        XCTAssertFalse(text.contains("not found") || text.contains("Broken directory") || text.contains("sprite"), String(text.suffix(400)))
+    }
+}
