@@ -7,6 +7,10 @@ line of introduction if wanted, then "- " bullets. Inline Markdown is fine.
 The app shows the sections since the version a user last ran.
 -->
 
+## 0.5.1 — 30 October 2026
+
+- Released alongside MacArch 0.5.1, which fixes a MacArch-only problem; LinuxArch is unchanged from 0.5.0.
+
 ## 0.5.0 — 30 October 2026
 
 - **Floppy drive sounds:** the drive's motor spinning up and down and its head stepping and seeking, from MAME's recordings of a 3.5" drive, as in MacBeeb. On unless you turn them off with Machine ▸ Disc Drive Sounds.

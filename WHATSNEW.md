@@ -9,6 +9,10 @@ release's section for the GitHub release and Sparkle's update window, and
 won't build a release without one.
 -->
 
+## 0.5.1
+
+- **Fix:** a machine made with My Machines' Create Machine… now starts to the desktop. Its first start skipped setting up RISC OS's settings, so it came up at the `*` prompt in a black and white screen mode. A machine that started like that is put right the next time you start it.
+
 ## 0.5.0
 
 - **My Machines:** a gallery of Archimedes kept with names (Window ▸ My Machines, ⇧⌘M, or the welcome screen's My Machines button). **Create Machine…** sets one up from scratch: model, processor, memory, monitor, a ROM that suits it, and hard discs, new or ones you have. Machine ▸ **Save to My Machines…** keeps the one you're using. Double-click one to start it in its own window, as you left it, RISC OS's settings included; Machine ▸ Update in My Machines saves hardware changes back. Rename, duplicate, export or bin them from their menus, and **Import Machine…** (moved here from the welcome screen) adds machine configuration files.

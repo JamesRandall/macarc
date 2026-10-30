@@ -67,6 +67,13 @@ enum MyMachinesSelfTest {
             let after = MyMachines.shared.entry(made)?.configuration
             report.append("created started: model=\(second.model.rawValue) cpu=\(second.cpu.rawValue) ram=\(second.ramKB) monitor=\(second.monitor.rawValue) rom=\(second.romVersion) running=\(second.host != nil) error=\(second.startError ?? "none")")
             report.append("after first start: keys=\(after?.powerOnKeys ?? [99]) cmos=\(after?.cmosPath ?? "none") hardDiscs=\(second.hardDiscs.map { $0.map { ($0 as NSString).lastPathComponent } ?? "-" })")
+            // Delete held at its first start: RISC OS sets its CMOS up.
+            try await Task.sleep(for: .seconds(8))
+            let (_, cmos, _) = try await second.currentSetup()
+            report.append("created CMOS set up: \(!Machine.cmosNeverConfigured(cmos))")
+            if let window = NSApp.windows.first(where: { $0.isVisible && $0.identifier?.rawValue.contains(MachineConfigurationCommands.windowID) == true && $0.title.contains("Created") }) ?? NSApp.windows.last(where: { $0.isVisible && $0.identifier?.rawValue.contains(MachineConfigurationCommands.windowID) == true }) {
+                capture(window, "-created")
+            }
             NotificationCenter.default.post(name: openRequest, object: nil)
             try await Task.sleep(for: .seconds(1.5))
             if let window = NSApp.windows.first(where: { $0.title == MyMachinesView.title && $0.isVisible }) {

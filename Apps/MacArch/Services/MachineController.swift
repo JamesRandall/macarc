@@ -217,12 +217,20 @@ final class MachineController {
         // A Classic always starts from RISC OS's defaults.
         if importedConfiguration != nil {
             c.cmosPath = cmos
+            if Self.cmosNeedsSettingUp(cmos) { c.powerOnKeys = [0x34] }
         } else if session == nil, let d = FileManager.default.contents(atPath: cmos), !Machine.cmosNeverConfigured([UInt8](d)) {
             c.cmosPath = cmos
         } else {
             c.powerOnKeys = [0x34]
         }
         return c
+    }
+
+    /// A CMOS file missing, or one RISC OS never set up (as a created My
+    /// Machines entry's is at its first start): Delete held resets it.
+    private static func cmosNeedsSettingUp(_ path: String) -> Bool {
+        guard let d = FileManager.default.contents(atPath: path) else { return true }
+        return Machine.cmosNeverConfigured([UInt8](d))
     }
 
     /// Builds a machine for `hw`. Hard discs whose files have gone are
@@ -322,6 +330,7 @@ final class MachineController {
             try Data(contentsOf: URL(fileURLWithPath: source)).write(to: profile, options: .atomic)
         }
         c.cmosPath = FileManager.default.fileExists(atPath: profile.path) ? profile.path : nil
+        if Self.cmosNeedsSettingUp(profile.path) { c.powerOnKeys = [0x34] }
         let m = try Machine(configuration: c, rom: rom)
         // Seed the private profile even when the input has no CMOS sidecar.
         try Data(m.cmos).write(to: profile, options: .atomic)
