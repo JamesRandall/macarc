@@ -123,6 +123,14 @@ public final class Machine {
     /// The Econet module, when one's fitted.
     public let econet: EconetModule?
 
+    /// The floppy drives' noises (MAME's 3.5" drive recordings), mixed into
+    /// the sound; nil for none.
+    public var discDriveSounds: DiscDriveSounds? {
+        get { driveNoises.sounds }
+        set { driveNoises.sounds = newValue }
+    }
+    let driveNoises = DiscDriveNoises()
+
     /// Fitted hard disc images by drive, whichever controller has them.
     public var hardDiscImages: [HardDiscImage?] { hdc?.drives ?? superIO?.ide?.drives ?? [] }
     public let cpu: ARM2<MEMC>
@@ -224,6 +232,13 @@ public final class Machine {
         } else {
             superIO = nil
         }
+        vidc.driveNoises = driveNoises
+        let floppies = fdc, noises = driveNoises
+        let driveEvent: (Int, DiscDriveEvent) -> Void = { [unowned(unsafe) floppies] d, e in
+            noises.event(drive: d, e, hasDisc: floppies.drives[d].disc != nil)
+        }
+        fdc.driveEvent = driveEvent
+        superIO?.fdc.driveEvent = driveEvent
         if let station = configuration.econetStation {
             guard (1...254).contains(station) else {
                 throw MachineError.badConfiguration("Econet station numbers go from 1 to 254")

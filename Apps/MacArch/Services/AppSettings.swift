@@ -119,10 +119,20 @@ final class AppSettings {
     /// Editors (VS Code) debug the first window's machine over the Debug
     /// Adapter Protocol on this localhost port. Takes effect next launch.
     var debugAdapterEnabled: Bool { didSet { d.set(debugAdapterEnabled, forKey: "debugAdapterEnabled") } }
+    /// The floppy drives' motor and head noises.
+    var discDriveSounds: Bool { didSet { d.set(discDriveSounds, forKey: "discDriveSounds") } }
     var debugAdapterPort: Int { didSet { d.set(debugAdapterPort, forKey: "debugAdapterPort") } }
 
     private init() {
+        // Self-tests start from nothing, like their settings: before
+        // anything is installed, so it isn't cleared away from under them.
+        if Self.isSelfTest {
+            for folder in ["ROMs", "Machines"] {
+                try? FileManager.default.removeItem(atPath: (Self.supportDirectory as NSString).appendingPathComponent(folder))
+            }
+        }
         debugAdapterEnabled = d.object(forKey: "debugAdapterEnabled") as? Bool ?? true
+        discDriveSounds = d.object(forKey: "discDriveSounds") as? Bool ?? true
         debugAdapterPort = d.integer(forKey: "debugAdapterPort") == 0 ? Int(DAPServer.defaultPort) : d.integer(forKey: "debugAdapterPort")
         romPath = d.string(forKey: "romPath")
         model = d.string(forKey: "model").flatMap(MachineModel.init(rawValue:)) ?? .a3000

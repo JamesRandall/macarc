@@ -33,6 +33,12 @@ final class MachineController {
     private(set) var paused = false
     private(set) var speedLimited = true
     var muted = false { didSet { audio.muted = muted } }
+
+    /// The floppy drives' noises, in every window but network stations'.
+    static func setDiscDriveSounds(_ on: Bool) {
+        AppSettings.shared.discDriveSounds = on
+        for c in live.allObjects where !c.isStation { c.host?.setDrivesHeard(on) }
+    }
     /// The ROM's version, e.g. "RISC OS 3.11 (29 Sep 1992)".
     private(set) var romVersion = ""
     private(set) var romPath: String?
@@ -179,6 +185,11 @@ final class MachineController {
 
     @ObservationIgnored private var importedConfiguration: MachineConfiguration?
     @ObservationIgnored private var importedCMOSPath: String?
+    /// The My Machines entry this machine was started from or saved as.
+    var savedMachineID: UUID?
+    /// Started from My Machines, in a window of its own (its CMOS is the
+    /// entry's).
+    private(set) var startedFromMyMachines = false
 
     // MARK: Machine
 
@@ -250,7 +261,8 @@ final class MachineController {
     func start(romPath path: String) {
         do {
             let (m, cmos, hw) = try makeMachine(Hardware(model: model, cpu: cpu, ramKB: ramKB, monitor: monitor, romPath: path, hardDiscs: hardDiscs))
-            let h = EmulatorHost(machine: m, profile: .init(cmosPath: cmos), audioSink: tee)
+            let h = EmulatorHost(machine: m, profile: .init(cmosPath: cmos), audioSink: tee,
+                                 drivesHeard: AppSettings.shared.discDriveSounds)
             host = h
             adopt(hw)
             romVersion = m.rom.versionString
@@ -283,7 +295,9 @@ final class MachineController {
         catch { alert("Could not import machine configuration", "\(error)") }
     }
 
-    func importConfiguration(from url: URL, confirmRestart: Bool) throws {
+    /// `savedMachine`: a My Machines entry's configuration, whose CMOS file
+    /// beside it is the machine's own (rather than a private copy).
+    func importConfiguration(from url: URL, confirmRestart: Bool, savedMachine: UUID? = nil) throws {
         guard !isStation else { throw MachineError.badConfiguration("Use the network configuration for network stations") }
         var c = try MachineConfigurationFile.load(from: url)
         let rom = try ROMImage.load(paths: c.romPaths)
@@ -301,15 +315,23 @@ final class MachineController {
         // Consolidate chip sets using the existing ROM library importer.
         let installed = try ROMImporter.install(rom, into: ROMLibrary.directory)
         c.romPaths = [installed]
-        let profile = URL(fileURLWithPath: AppSettings.supportDirectory).appendingPathComponent("Profiles/Imported-\(UUID().uuidString).cmos")
+        let profile = savedMachine != nil ? url.deletingLastPathComponent().appendingPathComponent("machine.cmos")
+            : URL(fileURLWithPath: AppSettings.supportDirectory).appendingPathComponent("Profiles/Imported-\(UUID().uuidString).cmos")
         try FileManager.default.createDirectory(at: profile.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if let source = c.cmosPath { try Data(contentsOf: URL(fileURLWithPath: source)).write(to: profile, options: .atomic) }
+        if let source = c.cmosPath, URL(fileURLWithPath: source).standardizedFileURL != profile.standardizedFileURL {
+            try Data(contentsOf: URL(fileURLWithPath: source)).write(to: profile, options: .atomic)
+        }
         c.cmosPath = FileManager.default.fileExists(atPath: profile.path) ? profile.path : nil
         let m = try Machine(configuration: c, rom: rom)
         // Seed the private profile even when the input has no CMOS sidecar.
         try Data(m.cmos).write(to: profile, options: .atomic)
         stopRecordingIfNeeded(); endSession()
         importedConfiguration = c; importedCMOSPath = profile.path
+        // A My Machines entry keeps its CMOS from here on, so a power cycle
+        // mustn't hold Delete again (as a created one's first start does).
+        if savedMachine != nil { importedConfiguration?.powerOnKeys = [] }
+        savedMachineID = savedMachine
+        startedFromMyMachines = savedMachine != nil
         let hw = Hardware(model: c.model, cpu: c.cpu, ramKB: c.ramKB, monitor: c.monitorType, romPath: installed, hardDiscs: c.hardDiscs)
         AppSettings.shared.addROM(installed)
         adopt(hw); romVersion = rom.versionString; startError = nil
@@ -348,6 +370,18 @@ final class MachineController {
                 } catch { continuation.resume(throwing: error) }
             }
         }
+    }
+
+    /// What My Machines saves: the machine's configuration as it runs now
+    /// (its hardware, ROM and hard discs), its CMOS, and the screen as a PNG.
+    func currentSetup() async throws -> (MachineConfiguration, [UInt8], Data?) {
+        guard let host, !isStation else { throw MachineError.badConfiguration("No running machine to save") }
+        syncHardDiscs()
+        let screen = screenshotPNG()
+        let (configuration, cmos) = await withCheckedContinuation { (continuation: CheckedContinuation<(MachineConfiguration, [UInt8]), Never>) in
+            host.send { s in continuation.resume(returning: (s.machine.configuration, s.machine.cmos)) }
+        }
+        return (configuration, cmos, screen)
     }
 
     func shutdown() {
@@ -760,9 +794,16 @@ final class MachineController {
     /// Asks where to save a new image and how big a drive it is (the
     /// smallest that holds `minimumBytes` is chosen to begin with).
     private func chooseNewHardDisc(drive: Int, message: String, minimumBytes: Int = 0) -> (URL, HardDiscGeometry)? {
+        Self.chooseNewHardDisc(model: model, drive: drive, message: message, minimumBytes: minimumBytes)
+    }
+
+    /// Asks where a new hard disc goes and how big it is, for `model`'s
+    /// interface (ST506 or IDE sizes).
+    static func chooseNewHardDisc(model: MachineModel, drive: Int, message: String, minimumBytes: Int = 0,
+                                  name: String? = nil) -> (URL, HardDiscGeometry)? {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [Self.hardDiscType]
-        panel.nameFieldStringValue = "Hard Disc \(drive + 4).hdf"
+        panel.nameFieldStringValue = name ?? "Hard Disc \(drive + 4).hdf"
         try? FileManager.default.createDirectory(atPath: AppSettings.hardDiscDirectory, withIntermediateDirectories: true)
         panel.directoryURL = URL(fileURLWithPath: AppSettings.hardDiscDirectory)
         panel.message = message

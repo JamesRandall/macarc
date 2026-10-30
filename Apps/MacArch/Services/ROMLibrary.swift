@@ -43,10 +43,8 @@ final class ROMLibrary {
 
     nonisolated static var directory: String { (AppSettings.supportDirectory as NSString).appendingPathComponent("ROMs") }
 
-    private init() {
-        // Self-tests start from nothing, like their settings.
-        if AppSettings.isSelfTest { try? FileManager.default.removeItem(atPath: Self.directory) }
-    }
+    // (Self-tests start from nothing: AppSettings clears the folder first.)
+    private init() {}
 
     /// Scans `urls`, installs what it finds and adds it to the list. The
     /// first RISC OS 3 found becomes the default if there was none.

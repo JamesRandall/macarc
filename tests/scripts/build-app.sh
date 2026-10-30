@@ -38,6 +38,8 @@ cp WHATSNEW.md "$APP/Contents/Resources/WhatsNew.md"
 cp Apps/MacArch/Resources/Level4.adf "$APP/Contents/Resources/Level4.adf"
 # ArcLibre, the free RISC OS ROM, with its licences, so MacArch works without one of Acorn's.
 ditto Apps/MacArch/Resources/ArcLibre "$APP/Contents/Resources/ArcLibre"
+# MAME's recordings of a 3.5" floppy drive (CC0), for the drives' noises.
+ditto Apps/MacArch/Resources/DriveSounds "$APP/Contents/Resources/DriveSounds"
 # Box art for the welcome screen and the Game Library, and the Archimedes Classics' catalogue.
 ditto Apps/MacArch/Resources/Covers "$APP/Contents/Resources/Covers"
 ditto Apps/MacArch/Resources/Classics "$APP/Contents/Resources/Classics"

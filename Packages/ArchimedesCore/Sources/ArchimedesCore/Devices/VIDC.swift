@@ -88,6 +88,10 @@ public final class VIDC {
     unowned(unsafe) let ioc: IOC
     unowned(unsafe) let scheduler: Scheduler
     public weak var audioSink: AudioSink?
+    /// The floppy drives' noises, mixed into the sound (the machine's).
+    var driveNoises: DiscDriveNoises?
+    /// Where the drives' noises were last filled in while sound DMA was off.
+    private var noiseFillTick: UInt64 = 0
     public var unknownWrite: ((String) -> Void)?
     /// Most recent sound bytes (ring) for tests / sample hashing.
     public private(set) var soundBytesOutput: UInt64 = 0
@@ -269,6 +273,7 @@ public final class VIDC {
 
     func endFrame() {
         frameCount &+= 1
+        fillDriveNoises()
         let w = frameWidth, h = frameHeight
         if w > 0 && h > 0 {
             let sx = pixelClockMHz <= 8 ? 2 : 1
@@ -398,7 +403,8 @@ public final class VIDC {
                     let s = Self.logTable[Int(byte)]
                     let pos = Float(stereo[ch])
                     let rightGain: Float = pos == 0 ? 0.5 : (pos - 1) / 6
-                    sink.audioSamples(left: s * (1 - rightGain), right: s * rightGain, count: 1, sampleRate: rate)
+                    let noise = driveNoises?.next(rate: rate) ?? 0
+                    sink.audioSamples(left: s * (1 - rightGain) + noise, right: s * rightGain + noise, count: 1, sampleRate: rate)
                 }
             }
         }
@@ -406,6 +412,20 @@ public final class VIDC {
         memc.ticks &+= MasterClock.nCycle + 3 * MasterClock.sCycle
         memc.advanceSoundPointer()
         scheduler.schedule(.sound, at: scheduler.firingTime &+ soundByteTicks * 16)
+    }
+
+    /// With sound DMA off there are no samples to mix the drives' noises
+    /// into, so they're sent on their own, a frame's worth at a time.
+    func fillDriveNoises() {
+        let now = scheduler.now
+        defer { noiseFillTick = now }
+        guard !scheduler.isScheduled(.sound), let noises = driveNoises, !noises.isQuiet, let sink = audioSink else { return }
+        let rate = 20_000.0
+        let count = min(Int(Double(now &- noiseFillTick) * rate / Double(MasterClock.ticksPerSecond)), 2_000)
+        for _ in 0..<count {
+            let noise = noises.next(rate: rate)
+            sink.audioSamples(left: noise, right: noise, count: 1, sampleRate: rate)
+        }
     }
 
     static func makeLogTable() -> [Float] {

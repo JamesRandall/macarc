@@ -56,9 +56,9 @@
     <mediatype>application/x-macarch-state</mediatype>
   </provides>
   <releases>
-    <release version="0.4.1" date="2026-10-29">
+    <release version="0.5.0" date="2026-10-30">
       <description>
-        <p>ArcLibre 0.9, the free RISC OS, in its 2 MB form for every model and its 4 MB form for the A5000 family, with its extras disc.</p>
+        <p>ArcLibre 0.9, the free RISC OS, in its 2 MB form for every model and its 4 MB form for the A5000 family, with its extras disc; and floppy drive sounds.</p>
       </description>
     </release>
     <release version="0.4.0" date="2026-10-29">

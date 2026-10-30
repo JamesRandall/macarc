@@ -159,6 +159,7 @@ struct MacArchApp: App {
             CommandGroup(before: .windowList) {
                 WelcomeMenuItem()
                 GameLibraryMenuItem()
+                MyMachinesMenuItem()
                 NetworkStudioMenuItem()
                 Divider()
             }
@@ -172,6 +173,8 @@ struct MacArchApp: App {
                     .keyboardShortcut("f", modifiers: [.command, .option])
                 Toggle("Mute", isOn: Binding(get: { machine?.muted ?? false }, set: { machine?.muted = $0 }))
                     .keyboardShortcut("m", modifiers: [.command, .option])
+                Toggle("Disc Drive Sounds", isOn: Binding(get: { AppSettings.shared.discDriveSounds },
+                                                          set: { MachineController.setDiscDriveSounds($0) }))
                 Divider()
                 Button("Reset") { machine?.reset() }
                     .keyboardShortcut("b")
@@ -223,6 +226,9 @@ struct MacArchApp: App {
         .defaultSize(width: 800, height: 640)
         .restorationBehavior(.disabled)
 
+        Window(MyMachinesView.title, id: MyMachinesView.windowID) { MyMachinesView() }
+            .defaultSize(width: 980, height: 700)
+            .defaultLaunchBehavior(.suppressed)
         Window(GameLibraryView.title, id: GameLibraryView.windowID) { GameLibraryView() }
             .defaultSize(width: 980, height: 720)
             .defaultLaunchBehavior(LaunchScreen.atLaunch == .games ? .presented : .suppressed)
@@ -314,6 +320,7 @@ struct HardwarePickers: View {
         Divider()
         Button("Export Machine Configuration…") { machine?.chooseExportConfiguration() }
             .disabled(machine?.host == nil || machine?.isStation == true)
+        SaveToMyMachinesItems(machine: machine)
         Divider()
         Picker("Model", selection: Binding(get: { model }, set: { machine?.setHardware(model: $0) })) {
             ForEach(MachineModel.allCases, id: \.self) { Text($0.displayName).tag($0) }
@@ -438,6 +445,11 @@ struct MachineWindow: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: WelcomeScreen.openRequest)) { _ in
                 openWindow(id: WelcomeScreen.windowID)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: MyMachinesSelfTest.openRequest)) { note in
+                if let id = note.object as? UUID { openWindow(id: MachineConfigurationCommands.windowID, value: id) } else {
+                    openWindow(id: MyMachinesView.windowID)
+                }
             }
             // An invitation link (macarch://join…) from its web page.
             .onOpenURL { url in

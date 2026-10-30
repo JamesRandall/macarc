@@ -107,18 +107,14 @@ struct WelcomeScreen: View {
                     blurb: "An A310, A3000, A440/1 or A5000, with ArcLibre, the free RISC OS that comes with MacArch, or RISC OS 2 or 3 from your own ROMs. Fit hard discs, and step through its ARM in the debugger.") {
             ModelChips()
         } actions: {
-            Button {
-                if MachineConfigurationCommands.chooseAndStart(openWindow: openWindow) {
-                    dismissWindow(id: Self.windowID)
-                }
-            } label: {
-                Label("Import Machine…", systemImage: "square.and.arrow.down")
+            Button { openWindow(id: MyMachinesView.windowID) } label: {
+                Label("My Machines", systemImage: "square.grid.2x2")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
-            .help("Import a machine configuration JSON and start that Archimedes")
-            .accessibilityIdentifier("welcome-import-machine")
+            .help("The machines you've saved, set up as you left them; import machine configurations there too")
+            .accessibilityIdentifier("welcome-my-machines")
             Button { openWindow(id: "roms") } label: {
                 Label("Add ROMs…", systemImage: "memorychip")
                     .frame(maxWidth: .infinity)

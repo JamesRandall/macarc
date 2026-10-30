@@ -57,6 +57,8 @@ install: app
 	else \
 		echo "(No ROM in $(ARCLIBRE): installing without ArcLibre; add RISC OS from the app.)"; \
 	fi
+	install -d $(SHAREDIR)/linuxarch/DriveSounds
+	install -m 644 Apps/MacArch/Resources/DriveSounds/* $(SHAREDIR)/linuxarch/DriveSounds/
 	install -Dm 644 LICENSE $(SHAREDIR)/licenses/linuxarch/LICENSE
 	@if [ -z "$(DESTDIR)" ]; then \
 		update-desktop-database -q $(SHAREDIR)/applications 2>/dev/null || true; \

@@ -36,6 +36,12 @@ final class MachineController {
     private(set) var paused = false
     private(set) var speedLimited = true
     var muted = false { didSet { audio.muted = muted } }
+
+    /// The floppy drives' noises, in every window but network stations'.
+    static func setDiscDriveSounds(_ on: Bool) {
+        AppSettings.shared.discDriveSounds = on
+        for c in live where !c.isStation { c.host?.setDrivesHeard(on) }
+    }
     /// The ROM's version, e.g. "RISC OS 3.11 (29 Sep 1992)".
     private(set) var romVersion = ""
     private(set) var romPath: String?
@@ -258,7 +264,8 @@ final class MachineController {
     func start(romPath path: String) {
         do {
             let (m, cmos, hw) = try makeMachine(Hardware(model: model, cpu: cpu, ramKB: ramKB, monitor: monitor, romPath: path, hardDiscs: hardDiscs))
-            let h = EmulatorHost(machine: m, profile: .init(cmosPath: cmos), audioSink: tee)
+            let h = EmulatorHost(machine: m, profile: .init(cmosPath: cmos), audioSink: tee,
+                                 drivesHeard: AppSettings.shared.discDriveSounds)
             host = h
             adopt(hw)
             romVersion = m.rom.versionString

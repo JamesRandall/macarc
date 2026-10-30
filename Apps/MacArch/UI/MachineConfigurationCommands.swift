@@ -8,10 +8,10 @@ import ArchimedesCore
 enum MachineConfigurationCommands {
     static let windowID = "imported-machine"
 
-    static func prepare(from url: URL) throws -> MachineController {
+    static func prepare(from url: URL, savedMachine: UUID? = nil) throws -> MachineController {
         let machine = MachineController(startAutomatically: false)
         do {
-            try machine.importConfiguration(from: url, confirmRestart: false)
+            try machine.importConfiguration(from: url, confirmRestart: false, savedMachine: savedMachine)
             guard machine.host != nil, machine.startError == nil else {
                 throw MachineError.badConfiguration(machine.startError ?? "The imported machine did not start")
             }

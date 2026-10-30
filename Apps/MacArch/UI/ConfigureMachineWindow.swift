@@ -54,7 +54,9 @@ struct ConfigureMachineWindow: View {
                 page { modelSection }
                     .tabItem { Text("Model") }.tag(Tab.model)
                 page { VStack(alignment: .leading, spacing: 24) { processorSection; memorySection } }
-                    .tabItem { Text("Processor & Memory") }.tag(Tab.processor)
+                    // Short: the tabs are in the toolbar, and when they don't all fit
+                    // beside the window's buttons macOS shows none of them.
+                    .tabItem { Text("CPU & Memory") }.tag(Tab.processor)
                 page { monitorSection }
                     .tabItem { Text("Monitor") }.tag(Tab.monitor)
                 page { romSection }
@@ -67,8 +69,9 @@ struct ConfigureMachineWindow: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
         }
-        // A maximum too, so a size remembered from a taller version is clamped.
-        .frame(minWidth: 640, idealWidth: 760, maxWidth: 1200, minHeight: 480, idealHeight: 640, maxHeight: 900)
+        // A maximum too, so a size remembered from a taller version is clamped;
+        // the minimum width keeps all five tabs in the toolbar.
+        .frame(minWidth: 700, idealWidth: 760, maxWidth: 1200, minHeight: 480, idealHeight: 640, maxHeight: 900)
         .safeAreaInset(edge: .bottom, spacing: 0) { restartBar }
         .animation(.snappy(duration: 0.25), value: draft)
         .onChange(of: current) { draft = current }
@@ -103,6 +106,9 @@ struct ConfigureMachineWindow: View {
             Menu("Configuration") {
                 Button("Import…") { machine.chooseImportConfiguration() }
                 Button("Export Current Machine…") { machine.chooseExportConfiguration() }
+                    .disabled(machine.host == nil)
+                Divider()
+                Button("Save to My Machines…") { SaveToMyMachines.ask(machine, openWindow: openWindow) }
                     .disabled(machine.host == nil)
             }
             .disabled(machine.isStation)

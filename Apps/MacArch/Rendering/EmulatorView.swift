@@ -122,6 +122,13 @@ final class EmulatorNSView: MTKView {
     /// is off, the movement as counts.
     private func follow(_ e: NSEvent) {
         if mouseCaptured { setMouseCaptured(false) }
+        // Mouse-moved events come to the key window wherever the pointer is,
+        // so over another window on top of the picture (Configure Machine,
+        // say) the pointer is that window's.
+        guard NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0) == window?.windowNumber else {
+            stopFollowing()
+            return
+        }
         // RISC OS's pointer can't go into VIDC's border: there it waits at
         // the display area's edge, and the Mac's pointer shows.
         var spot = framePoint(e, clamped: true)

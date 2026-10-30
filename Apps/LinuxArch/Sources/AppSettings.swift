@@ -113,6 +113,8 @@ final class AppSettings {
     /// Editors (VS Code) debug the first window's machine over the Debug
     /// Adapter Protocol on this localhost port. Takes effect next launch.
     var debugAdapterEnabled: Bool { didSet { d.set(debugAdapterEnabled, forKey: "debugAdapterEnabled") } }
+    /// The floppy drives' motor and head noises.
+    var discDriveSounds: Bool { didSet { d.set(discDriveSounds, forKey: "discDriveSounds") } }
     var debugAdapterPort: Int { didSet { d.set(debugAdapterPort, forKey: "debugAdapterPort") } }
 
     private init() {
@@ -122,6 +124,7 @@ final class AppSettings {
         secondaryClick = d.string(forKey: "secondaryClick").flatMap(SecondaryClick.init(rawValue:)) ?? .adjust
         mouseMode = d.string(forKey: "mouseMode").flatMap(MouseMode.init(rawValue:)) ?? .capture
         debugAdapterEnabled = d.object(forKey: "debugAdapterEnabled") as? Bool ?? true
+        discDriveSounds = d.object(forKey: "discDriveSounds") as? Bool ?? true
         debugAdapterPort = d.integer(forKey: "debugAdapterPort") == 0 ? Int(DAPServer.defaultPort) : d.integer(forKey: "debugAdapterPort")
         for p in d.stringArray(forKey: "romLibrary") ?? [] { addROM(p, save: false) }
         // Developer convenience: launched from the project with no ROM chosen.

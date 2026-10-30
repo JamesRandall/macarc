@@ -19,6 +19,10 @@ public final class FDC765 {
     }
 
     var dor: UInt8 = 0
+    /// Milliseconds a step, from Specify's step rate (at 500 kbit/s).
+    var stepMs = 3
+    /// Motor and head movements, for the drives' noises.
+    var driveEvent: ((Int, DiscDriveEvent) -> Void)?
     var dataRate: UInt8 = 2
     /// Bytes of the command being collected.
     var commandBytes: [UInt8] = []
@@ -112,6 +116,9 @@ public final class FDC765 {
         switch port {
         case 0x3F2:
             let wasReset = dor & 0x04 == 0
+            for d in 0..<4 where (dor ^ v) & (0x10 << UInt8(d)) != 0 {
+                driveEvent?(d, v & (0x10 << UInt8(d)) != 0 ? .startSpinning : .stopSpinning)
+            }
             dor = v
             updateIndex()
             if v & 0x04 == 0 {
@@ -189,6 +196,7 @@ public final class FDC765 {
         log?("FDC command " + cmd.map { String(format: "%02X", $0) }.joined(separator: " ") + " (rate \(dataRate), track \(drives[Int(cmd.count > 1 ? cmd[1] & 3 : 0)].headTrack))")
         switch op & 0x1F {
         case 0x03: // Specify
+            stepMs = 16 - Int(cmd[1] >> 4)
             finish([], interrupt: false)
         case 0x04: // Sense Drive Status
             select(cmd[1])
@@ -199,6 +207,7 @@ public final class FDC765 {
             finish([st3], interrupt: false)
         case 0x07: // Recalibrate
             select(cmd[1])
+            driveEvent?(unit, .seekStart(steps: drives[unit].headTrack, stepMs: stepMs))
             drives[unit].headTrack = 0
             pendingSense.append((0x20 | UInt8(unit), 0))
             phase = .execution
@@ -206,6 +215,7 @@ public final class FDC765 {
             scheduler.schedule(.fdc765, after: MasterClock.ticks(milliseconds: 2))
         case 0x0F: // Seek
             select(cmd[1])
+            driveEvent?(unit, .seekStart(steps: abs(min(Int(cmd[2]), 83) - drives[unit].headTrack), stepMs: stepMs))
             drives[unit].headTrack = min(Int(cmd[2]), 83)
             pendingSense.append((0x20 | UInt8(unit), cmd[2]))
             phase = .execution

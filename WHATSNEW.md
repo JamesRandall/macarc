@@ -9,11 +9,15 @@ release's section for the GitHub release and Sparkle's update window, and
 won't build a release without one.
 -->
 
-## 0.4.1
+## 0.5.0
 
+- **My Machines:** a gallery of Archimedes kept with names (Window ▸ My Machines, ⇧⌘M, or the welcome screen's My Machines button). **Create Machine…** sets one up from scratch: model, processor, memory, monitor, a ROM that suits it, and hard discs, new or ones you have. Machine ▸ **Save to My Machines…** keeps the one you're using. Double-click one to start it in its own window, as you left it, RISC OS's settings included; Machine ▸ Update in My Machines saves hardware changes back. Rename, duplicate, export or bin them from their menus, and **Import Machine…** (moved here from the welcome screen) adds machine configuration files.
+- **Floppy drive sounds:** the drive's motor spinning up and down and its head stepping and seeking, from MAME's recordings of a 3.5" drive, as in MacBeeb. On unless you turn them off with Machine ▸ Disc Drive Sounds.
 - **ArcLibre 0.9:** the free RISC OS that comes with MacArch is now [ArcLibre 0.9](https://github.com/acorn-playground/arclibre), in both its forms, replacing 0.8. The **2 MB ROM** runs on every model, the A5000 family included; the **4 MB ROM** has DOSFS, Alarm and printing built in, and is for the A5000, A3010, A3020 and A4000, whose sockets take it. Both join the ROM list, named with their sizes.
 - **ArcLibre's extras disc:** File ▸ Insert ArcLibre Extras Disc puts in the disc that goes with the 2 MB ROM, with DOSFS, !Alarm and !Printers. It's a copy kept in MacArch's own folder, so you can save changes to it.
 - **ROMs that suit the model:** changing model swaps a ROM that can't drive it for one that can, keeping to ArcLibre if that's what you were using (or RISC OS 3 for 2).
+
+- **Fixes:** Configure Machine's tabs no longer vanish into the toolbar's overflow menu on models with hard discs; in Follow the Mac pointer mode, the Mac's pointer shows over another window on top of the Archimedes screen.
 
 ## 0.4.0
 

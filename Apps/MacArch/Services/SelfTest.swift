@@ -296,6 +296,9 @@ enum SelfTest {
             if let template = env["MACARCH_SELFTEST_NETWORK"].flatMap(NetworkTemplate.init(rawValue:)) {
                 await networkSelfTest(template, path: path, env: env)
             }
+            if env["MACARCH_SELFTEST_MYMACHINES"] != nil {
+                await MyMachinesSelfTest.run(machine, path: path)
+            }
             // MACARCH_SELFTEST_CONFIGURE=1 (or a model, to show it chosen): open Configure Machine at its usual size and capture it
             // (MACARCH_SELFTEST_CONFIGURE_TAB picks the tab: model, processor, monitor, rom, hardDiscs).
             if env["MACARCH_SELFTEST_CONFIGURE"] != nil {

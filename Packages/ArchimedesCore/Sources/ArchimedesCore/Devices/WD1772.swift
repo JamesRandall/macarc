@@ -53,8 +53,13 @@ public final class WD1772 {
     var typeI = true
 
     var motorOn = false {
-        didSet { if oldValue && !motorOn { motorOffTick = scheduler.now } }
+        didSet {
+            if oldValue && !motorOn { motorOffTick = scheduler.now }
+            if oldValue != motorOn { driveEvent?(selectedDrive ?? 0, motorOn ? .startSpinning : .stopSpinning) }
+        }
     }
+    /// Motor and head movements, for the drives' noises.
+    var driveEvent: ((Int, DiscDriveEvent) -> Void)?
     /// When the motor last stopped.
     var motorOffTick: UInt64 = 0
     /// Drive activity light (A3000: lit while the drive is selected and its motor runs).
@@ -267,6 +272,14 @@ public final class WD1772 {
 
     func typeIEvent() {
         if phase == 0 {
+            if let d = selectedDrive {
+                let steps = switch command {
+                case .restore: drives[d].headTrack
+                case .seek: abs(Int(dataRegister) - Int(trackRegister))
+                default: 1
+                }
+                driveEvent?(d, .seekStart(steps: steps, stepMs: Int(Self.stepRatesMs[Int(commandRegister & 3)])))
+            }
             status |= 0x20 // spin-up complete
             switch command {
             case .restore:
@@ -301,6 +314,7 @@ public final class WD1772 {
             return
         }
         if phase == 3 {
+            driveEvent?(selectedDrive ?? 0, .seekEnd)
             if commandRegister & 0x04 != 0 {
                 phase = 4
                 scheduler.schedule(.floppy, after: MasterClock.ticks(milliseconds: 15))

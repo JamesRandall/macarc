@@ -96,10 +96,16 @@ final class EmulatorHost: @unchecked Sendable {
     /// state makes a new one). The network's thread's.
     var lineMachine: Machine?
 
-    init(machine: Machine, profile: Profile, audioSink: AudioSink, isStation: Bool = false) {
+    /// MAME's recordings of a 3.5" drive, from the app's resources.
+    static let discDriveSounds: DiscDriveSounds? = Bundle.main.resourcePath.flatMap { DiscDriveSounds.load(folder: $0 + "/DriveSounds") }
+    /// Whether the drives are heard (the emulation thread's).
+    fileprivate var drivesHeard: Bool
+
+    init(machine: Machine, profile: Profile, audioSink: AudioSink, isStation: Bool = false, drivesHeard: Bool = false) {
         self.profile = profile
         self.audioSink = audioSink
         self.isStation = isStation
+        self.drivesHeard = drivesHeard
         let s = Session(machine: machine, host: self)
         session = s
         attach(machine)
@@ -178,8 +184,17 @@ final class EmulatorHost: @unchecked Sendable {
 
     // MARK: Emulation thread
 
+    /// Turns the floppy drives' noises on or off.
+    func setDrivesHeard(_ on: Bool) {
+        send { s in
+            s.host.drivesHeard = on
+            s.machine.discDriveSounds = on ? Self.discDriveSounds : nil
+        }
+    }
+
     fileprivate func attach(_ m: Machine) {
         m.vidc.audioSink = audioSink
+        m.discDriveSounds = drivesHeard ? Self.discDriveSounds : nil
         m.vidc.frameCompleted = { [weak self, unowned m] frame in
             m.ioc.pumpKeyboard()
             guard let self else { return }

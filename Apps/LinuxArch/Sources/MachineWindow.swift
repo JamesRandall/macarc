@@ -389,6 +389,7 @@ final class MachineWindow {
                 submenu.section { section in
                     section.item("Full Speed", "win.full-speed")
                     section.item("Mute", "win.mute")
+                    section.item("Disc Drive Sounds", "win.disc-drive-sounds")
                 }
                 submenu.section { section in
                     section.item("Reset", "win.reset")
@@ -585,6 +586,7 @@ final class MachineWindow {
         actions.addToggle("pause", state: false) { _ in machine.togglePause() }
         actions.addToggle("full-speed", state: false) { _ in machine.toggleSpeedLimit() }
         actions.addToggle("mute", state: false) { on in machine.muted = on }
+        actions.addToggle("disc-drive-sounds", state: AppSettings.shared.discDriveSounds) { on in MachineController.setDiscDriveSounds(on) }
         actions.add("reset") { machine.reset() }
         actions.add("power-cycle") { machine.powerCycle() }
         actions.addRadio("mouse-mode", state: AppSettings.shared.mouseMode.rawValue) { value in
@@ -682,6 +684,7 @@ final class MachineWindow {
             actions["next-disc"]?.isEnabled = running && machine.sessionDiscsActive
             actions["full-speed"]?.setState(!machine.speedLimited)
             actions["mute"]?.setState(machine.muted)
+            actions["disc-drive-sounds"]?.setState(AppSettings.shared.discDriveSounds)
             actions["model"]?.setState(machine.model.rawValue)
             actions["cpu"]?.setState(machine.cpu.rawValue)
             actions["memory"]?.setState(String(machine.ramKB))
