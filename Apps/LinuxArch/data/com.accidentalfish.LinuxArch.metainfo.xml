@@ -56,6 +56,11 @@
     <mediatype>application/x-macarch-state</mediatype>
   </provides>
   <releases>
+    <release version="0.5.3" date="2026-10-30">
+      <description>
+        <p>New hard discs get an empty Library, and a machine with a hard disc starts on it (drive 4), so installers such as Acorn C/C++'s find the library.</p>
+      </description>
+    </release>
     <release version="0.5.2" date="2026-10-30">
       <description>
         <p>New hard discs have !System and !Scrap, as on Acorn's RISC OS 3.1 hard discs; and ArcLibre 0.9.1.</p>

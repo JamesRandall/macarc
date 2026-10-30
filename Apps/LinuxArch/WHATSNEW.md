@@ -7,7 +7,7 @@ line of introduction if wanted, then "- " bullets. Inline Markdown is fine.
 The app shows the sections since the version a user last ran.
 -->
 
-## 0.5.3
+## 0.5.3 — 30 October 2026
 
 - **Installers find a library:** new hard discs also get an empty Library directory, and a machine starts on its hard disc (drive 4) once one is fitted, as an owner would have set it with `*Configure Drive 4`. Installers that copy their tools into the library, such as Acorn C/C++'s, then work.
 
