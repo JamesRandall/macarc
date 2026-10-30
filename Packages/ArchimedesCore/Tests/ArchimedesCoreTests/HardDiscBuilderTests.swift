@@ -437,7 +437,7 @@ extension HardDiscBuilderTests {
             ["!Boot", "!Run", "!Help", "!Sprites", "!Sprites22"].map { "\(app).\($0)" } }))
         let existing = ADFSFormatter.withSystem([.init(path: ["!System", "!Boot"], data: [], type: 0xFEB)])
         XCTAssertEqual(existing.items.filter { $0.path[0] == "!System" }.count, 1, "an existing !System is left alone")
-        XCTAssertEqual(existing.directories, [["!Scrap", "ScrapDir"]], "and !Scrap is still added")
+        XCTAssertEqual(existing.directories, [["!Scrap", "ScrapDir"], ["Library"]], "and !Scrap and Library are still added")
         var c = MachineConfiguration(model: .a440)
         c.romPaths = [dir]
         c.hardDiscs = [path]
@@ -447,11 +447,42 @@ extension HardDiscBuilderTests {
         m.run(seconds: 25)
         m.keyDown(0x0C); m.run(seconds: 0.1); m.keyUp(0x0C) // F12
         m.run(seconds: 1)
-        m.scheduleTyping("*Run :4.$.!System.!Boot\n*Run :4.$.!Scrap.!Boot\n*Ex System:Modules\n*Show System$Path\n*Show Wimp$Scrap*\n", intervalMs: 40)
+        XCTAssertEqual(m.configuredDrive, 4, "the CMOS reset's default drive becomes the hard disc")
+        m.scheduleTyping("*Run :4.$.!System.!Boot\n*Run :4.$.!Scrap.!Boot\n*Ex System:Modules\n*Show System$Path\n*Show Wimp$Scrap*\n*Ex %\n", intervalMs: 40)
         m.run(seconds: 15)
         let text = m.recentText
+        XCTAssertTrue(text.contains("Library"), "started on the hard disc, its Library is the library: " + String(text.suffix(400)))
         XCTAssertTrue(text.contains("$.!System."), String(text.suffix(400)))
         XCTAssertTrue(text.contains("$.!Scrap.ScrapDir.ScrapFile"), String(text.suffix(400)))
         XCTAssertFalse(text.contains("not found") || text.contains("Broken directory") || text.contains("sprite"), String(text.suffix(400)))
+    }
+}
+
+extension HardDiscBuilderTests {
+    /// Fitting a first hard disc makes ADFS start on it (drive 4); taking
+    /// the last away starts on the floppy drive again; a drive configured
+    /// in between is left alone.
+    func testConfiguredDriveFollowsHardDiscs() throws {
+        let path = NSTemporaryDirectory() + "macarch-drive-\(UUID().uuidString).hdf"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        try ADFSFormatter.createFormattedImage(path: path, geometry: HardDiscGeometry(cylinders: 615, heads: 4), name: "Drive")
+        var c = MachineConfiguration(model: .a440)
+        c.romPaths = [ArcLibreTests.path]
+        c.hardDiscs = [path]
+        let fitted = try Machine(configuration: c)
+        XCTAssertEqual(fitted.configuredDrive, 0)
+        fitted.powerOn()
+        XCTAssertEqual(fitted.configuredDrive, 4)
+        var cmos = fitted.cmos
+        cmos[Machine.cmosDrive] = cmos[Machine.cmosDrive] & ~0x07 | 5
+        fitted.loadCMOS(cmos)
+        fitted.powerOn()
+        XCTAssertEqual(fitted.configuredDrive, 5, "a hard disc drive chosen by hand stays")
+        c.hardDiscs = []
+        let removed = try Machine(configuration: c)
+        removed.loadCMOS(fitted.cmos)
+        removed.powerOn()
+        XCTAssertEqual(removed.configuredDrive, 0)
+        XCTAssertEqual(removed.configuredHardDiscs, 0)
     }
 }

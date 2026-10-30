@@ -7,6 +7,10 @@ line of introduction if wanted, then "- " bullets. Inline Markdown is fine.
 The app shows the sections since the version a user last ran.
 -->
 
+## 0.5.3
+
+- **Installers find a library:** new hard discs also get an empty Library directory, and a machine starts on its hard disc (drive 4) once one is fitted, as an owner would have set it with `*Configure Drive 4`. Installers that copy their tools into the library, such as Acorn C/C++'s, then work.
+
 ## 0.5.2 — 30 October 2026
 
 - **!System and !Scrap on new hard discs:** a new hard disc, empty or made from files, has !System and !Scrap in its root directory, as on Acorn's own RISC OS 3.1 hard discs, so installers that add modules to `System:Modules` (Acorn C/C++'s, for example) and applications that pass files to each other work.

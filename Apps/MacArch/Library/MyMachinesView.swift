@@ -292,7 +292,7 @@ private struct CreateMachineSheet: View {
         let base = name.trimmingCharacters(in: .whitespaces).isEmpty ? model.rawValue : name.trimmingCharacters(in: .whitespaces)
         let file = String("\(base) drive \(drive + 4).hdf".map { "/:".contains($0) ? "-" : $0 })
         guard let (url, geometry, system) = MachineController.chooseNewHardDisc(
-            model: model, drive: drive, message: { $0 ? "A new formatted hard disc, with !System and !Scrap, for drive \(drive + 4) of \(base)." : "A new hard disc, formatted and empty, for drive \(drive + 4) of \(base)." }, name: file) else { return }
+            model: model, drive: drive, message: { $0 ? "A new formatted hard disc, with !System, !Scrap and Library, for drive \(drive + 4) of \(base)." : "A new hard disc, formatted and empty, for drive \(drive + 4) of \(base)." }, name: file) else { return }
         do {
             try ADFSFormatter.createFormattedImage(path: url.path, geometry: geometry, name: (url.lastPathComponent as NSString).deletingPathExtension, system: system)
             hardDiscs[drive] = url.path

@@ -822,12 +822,12 @@ final class MachineController {
         sizes.addItems(withTitles: presets.map(\.name))
         sizes.selectItem(at: presets.firstIndex { $0.geometry.byteCount >= minimumBytes } ?? presets.count - 1)
         let label = NSTextField(labelWithString: "Drive:")
-        let system = NSButton(checkboxWithTitle: "Add !System and !Scrap", target: nil, action: nil)
+        let system = NSButton(checkboxWithTitle: "Add !System, !Scrap and Library", target: nil, action: nil)
         system.state = .on
         let follow = CheckboxAction { panel.message = message($0) }
         system.target = follow
         system.action = #selector(CheckboxAction.changed(_:))
-        system.toolTip = "!System, whose Modules directory applications load shared modules from (and installers such as Acorn C/C++'s add theirs to), and !Scrap, where applications put files they pass to each other: set up as on Acorn's RISC OS 3.1 hard discs."
+        system.toolTip = "!System, whose Modules directory applications load shared modules from (and installers such as Acorn C/C++'s add theirs to), !Scrap, where applications put files they pass to each other, set up as on Acorn's RISC OS 3.1 hard discs; and an empty Library, where installers put their tools (RISC OS uses it when it starts on the hard disc)."
         let accessory = NSStackView(views: [label, sizes, system])
         accessory.spacing = 12
         accessory.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
@@ -847,7 +847,7 @@ final class MachineController {
 
     /// Creates a formatted image of a chosen size and fits it (power cycles).
     func newHardDisc(drive: Int) {
-        guard let (url, geometry, system) = chooseNewHardDisc(drive: drive, message: { $0 ? "A new formatted hard disc, with !System and !Scrap, for drive \(drive + 4). The machine will be power cycled." : "A new hard disc, formatted and empty, for drive \(drive + 4). The machine will be power cycled." }) else { return }
+        guard let (url, geometry, system) = chooseNewHardDisc(drive: drive, message: { $0 ? "A new formatted hard disc, with !System, !Scrap and Library, for drive \(drive + 4). The machine will be power cycled." : "A new hard disc, formatted and empty, for drive \(drive + 4). The machine will be power cycled." }) else { return }
         do {
             try ADFSFormatter.createFormattedImage(path: url.path, geometry: geometry, name: (url.lastPathComponent as NSString).deletingPathExtension, system: system)
         } catch {
@@ -892,7 +892,7 @@ final class MachineController {
         let sources = given ?? chooseFileSources("Files for a new hard disc")
         guard !sources.isEmpty, let items = items(from: sources) else { return }
         let needed = items.reduce(0x10000) { $0 + $1.data.count + 2048 }
-        guard let (url, geometry, system) = chooseNewHardDisc(drive: drive, message: { "A new hard disc holding the \(items.count) files from \(Self.describe(sources))\($0 ? " and !System and !Scrap" : ""), for drive \(drive + 4). The machine will be power cycled." }, minimumBytes: needed) else { return }
+        guard let (url, geometry, system) = chooseNewHardDisc(drive: drive, message: { "A new hard disc holding the \(items.count) files from \(Self.describe(sources))\($0 ? ", !System, !Scrap and Library" : ""), for drive \(drive + 4). The machine will be power cycled." }, minimumBytes: needed) else { return }
         do {
             let (files, directories) = system ? ADFSFormatter.withSystem(items) : (items, [])
             try ADFSHardDiscBuilder.create(path: url.path, geometry: geometry, name: (url.lastPathComponent as NSString).deletingPathExtension,

@@ -9,6 +9,10 @@ release's section for the GitHub release and Sparkle's update window, and
 won't build a release without one.
 -->
 
+## 0.5.3
+
+- **Installers find a library:** new hard discs also get an empty Library directory, and a machine starts on its hard disc (drive 4) once one is fitted, as an owner would have set it with `*Configure Drive 4`. RISC OS then uses the hard disc's Library as the library, so installers that copy their tools into it, such as Acorn C/C++'s, no longer ask for their first disc again and again. A drive you configure yourself is left alone.
+
 ## 0.5.2
 
 - **!System and !Scrap on new hard discs:** New Hard Disc… and Create Machine's new hard discs put !System and !Scrap in the root directory, as on Acorn's own RISC OS 3.1 hard discs, so installers that add modules to `System:Modules` (Acorn C/C++'s, for example) and applications that pass files to each other work. A checkbox beside the drive size leaves them off. New Hard Disc from Files… adds them too, unless the files have their own.

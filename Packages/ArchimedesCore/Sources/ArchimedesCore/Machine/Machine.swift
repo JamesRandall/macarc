@@ -273,12 +273,13 @@ public final class Machine {
         superIO?.fdc.log = log
         // A CMOS reset (Delete held at power-on) writes the default drive
         // count; the fitted hard discs are added as soon as it does, before
-        // ADFS reads it.
+        // ADFS reads it. Its default drive, 0, becomes 4 with a hard disc.
         // The Econet station number is set the same way.
         if (model.hardDiscSlots > 0 || econet != nil || !configuration.cmosSettings.isEmpty) && !configuration.powerOnKeys.isEmpty {
             rtc.ramWritten = { [unowned self] a in
                 guard self.ticks < MasterClock.ticks(milliseconds: 30_000) else { return }
                 if a == Self.cmosDrives && self.configureHardDiscsInCMOS() { self.cmosAdjusted = true }
+                if a == Self.cmosDrive && self.startOnHardDiscInCMOS() { self.cmosAdjusted = true }
                 if a == Self.cmosStation && self.configureStationInCMOS() { self.cmosAdjusted = true }
                 if self.configuration.cmosSettings.contains(where: { $0.physical == a }) && self.applyCMOSSettings() { self.cmosAdjusted = true }
                 // RISC OS then writes the checksum of what it set.
@@ -593,8 +594,34 @@ public final class Machine {
     func configureHardDiscsInCMOS() -> Bool {
         guard configuration.model.hardDiscSlots > 0 else { return false }
         let wanted = (hardDiscImages.lastIndex(where: { $0 != nil }) ?? -1) + 1
-        guard configuredHardDiscs != wanted else { return false }
+        let had = configuredHardDiscs
+        guard had != wanted else { return false }
         rtc.ram[Self.cmosDrives] = (rtc.ram[Self.cmosDrives] & ~hardDiscMask) | UInt8(wanted << hardDiscShift)
+        // Fitting the first hard disc starts on it; taking the last away
+        // starts on the floppy drive again.
+        if had == 0 { startOnHardDiscInCMOS() }
+        if wanted == 0 && configuredDrive >= 4 { rtc.ram[Self.cmosDrive] &= ~0x07 }
+        updateCMOSChecksum()
+        return true
+    }
+
+    /// RTC RAM byte holding the drive ADFS starts on (`*Configure Drive`,
+    /// bits 0-2 of RISC OS's byte 11).
+    static let cmosDrive = CMOSSetting.drive(0).physical
+
+    /// The drive ADFS starts on.
+    public var configuredDrive: Int { Int(rtc.ram[Self.cmosDrive] & 0x07) }
+
+    /// With a hard disc fitted, ADFS starts on drive 4, as the owner of one
+    /// would configure it: its $.Library is the library, where installers
+    /// such as Acorn C/C++'s put their tools, rather than none (the floppy
+    /// drive is usually empty at start-up). Done when a CMOS reset sets the
+    /// default drive (0) and when the first hard disc is fitted; a drive
+    /// configured after that is left alone. Returns whether it changed.
+    @discardableResult
+    func startOnHardDiscInCMOS() -> Bool {
+        guard configuration.model.hardDiscSlots > 0, hardDiscImages.contains(where: { $0 != nil }), configuredDrive < 4 else { return false }
+        rtc.ram[Self.cmosDrive] = rtc.ram[Self.cmosDrive] & ~0x07 | 4
         updateCMOSChecksum()
         return true
     }

@@ -816,7 +816,7 @@ final class MachineController {
         guard let (url, geometry) = await chooseNewHardDisc(drive: drive, heading: "New Hard Disc",
                                                             message: "A new hard disc, formatted and empty, for drive \(drive + 4). The machine will be power cycled.") else { return }
         do {
-            // With !System (for installers that put modules in System:Modules) and !Scrap, as on Acorn's RISC OS 3.1 hard discs.
+            // With !System (for installers that put modules in System:Modules) and !Scrap, as on Acorn's RISC OS 3.1 hard discs, and Library.
             try ADFSFormatter.createFormattedImage(path: url.path, geometry: geometry, name: (url.lastPathComponent as NSString).deletingPathExtension, system: true)
         } catch {
             alert("Could not create the hard disc", "\(error)")

@@ -30,15 +30,18 @@ public enum ADFSFormatter {
     }
 
     /// `items` with !System and !Scrap added, set up as Acorn's RISC OS 3.1
-    /// hard discs had them (see `SystemApplications`), leaving out either if
-    /// `items` already has one. Installers such as Acorn C/C++'s put their
-    /// modules in System:Modules, so need a !System they can write to.
+    /// hard discs had them (see `SystemApplications`), and an empty Library
+    /// directory, leaving out any that `items` already has. Installers such
+    /// as Acorn C/C++'s put their modules in System:Modules, so need a
+    /// !System they can write to, and their tools in the library: RISC OS
+    /// makes $.Library the library when it starts on the disc (a machine
+    /// with a hard disc starts on drive 4; see `Machine`).
     public static func withSystem(_ items: [ADFSHardDiscBuilder.Item], date: Date = Date())
         -> (items: [ADFSHardDiscBuilder.Item], directories: [[String]]) {
         let present = Set(items.compactMap { $0.path.first?.uppercased() })
         let (apps, directories) = SystemApplications.items(date: date)
         let keep = { (path: [String]) in !present.contains(path[0].uppercased()) }
-        return (items + apps.filter { keep($0.path) }, directories.filter(keep))
+        return (items + apps.filter { keep($0.path) }, (directories + [["Library"]]).filter(keep))
     }
 
     /// A stable disc id from the name (HForm picks one at random; any value will do).
