@@ -7,6 +7,12 @@ line of introduction if wanted, then "- " bullets. Inline Markdown is fine.
 The app shows the sections since the version a user last ran.
 -->
 
+## 0.5.4
+
+- **My Machines:** a gallery of Archimedes kept with names (the main menu's My Machines, Ctrl+Shift+Alt+K, or the setup page's My Machines button). **Create Machine…** sets one up from scratch: model, processor, memory, monitor, a ROM that suits it, and hard discs, new or ones you have. Machine ▸ **Save to My Machines…** keeps the one you're using. Double-click one to start it in its own window, as you left it, RISC OS's settings included; Machine ▸ Update in My Machines saves hardware changes back. Rename, duplicate, export, show or bin them by right-clicking, and **Import Machine…** adds machine configuration files.
+- **!System, !Scrap and Library, or not:** New Hard Disc… and New Hard Disc from Files… have a check box to leave them off a new hard disc.
+- **Fix:** an imported machine configuration whose CMOS settings are missing, or were never set up, now starts with RISC OS's defaults, rather than at the `*` prompt in a black and white screen mode.
+
 ## 0.5.3 — 30 October 2026
 
 - **Installers find a library:** new hard discs also get an empty Library directory, and a machine starts on its hard disc (drive 4) once one is fitted, as an owner would have set it with `*Configure Drive 4`. Installers that copy their tools into the library, such as Acorn C/C++'s, then work.

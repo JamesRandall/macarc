@@ -96,6 +96,10 @@ final class LinuxArchApp {
             GameLibraryWindow.show()
             return
         }
+        if MyMachinesWindow.current != nil {
+            MyMachinesWindow.show()
+            return
+        }
         newWindow()
     }
 
@@ -165,6 +169,7 @@ final class LinuxArchApp {
         actions.add("about") { [unowned self] in AboutDialog.present(parent: self.activeWindow) }
         actions.add("whats-new") { [unowned self] in WhatsNewDialog.present(parent: self.activeWindow) }
         actions.add("game-library") { GameLibraryWindow.show() }
+        actions.add("my-machines") { MyMachinesWindow.show() }
         actions.add("network-new") { NetworkStartWindow.show() }
         actions.add("network-open") { [unowned self] in NetworkStudioWindow.chooseAndOpen(parent: self.activeWindow) }
         actions.add("network-recent", string: { path in NetworkStudioWindow.show(URL(fileURLWithPath: path)) })
@@ -260,6 +265,8 @@ final class LinuxArchApp {
         ("General", [
             ("New Archimedes window", "app.new-window", ["<Control><Shift><Alt>n"]),
             ("Game library", "app.game-library", ["<Control><Shift><Alt>g"]),
+            // (The Mac's ⇧⌘M; Ctrl+Shift+Alt+M is Mute, its ⌥⌘M.)
+            ("My Machines", "app.my-machines", ["<Control><Shift><Alt>k"]),
             ("Network Studio", "app.network-studio", ["<Control><Shift><Alt>0"]),
             ("Join an Econet network", "app.network-join", ["<Control><Shift><Alt>j"]),
             ("Close window", "window.close", ["<Control><Shift>w"]),
@@ -346,6 +353,10 @@ final class LinuxArchApp {
         .archive-green { color: #73d98c; }
         .cover-caption { color: alpha(white, 0.7); font-size: 0.8em; }
         .add-tile { border: 2px dashed alpha(currentColor, 0.4); border-radius: 6px; }
+        .machine-screen { background-color: black; border-radius: 10px; box-shadow: 0 0 0 1px alpha(currentColor, 0.12); }
+        .machine-placeholder { background-image: linear-gradient(to bottom, #383838, #1f1f1f); }
+        .running-badge { font-size: 0.85em; font-weight: bold; color: white; background-color: alpha(#2ec27e, 0.9);
+                         border-radius: 99px; padding: 3px 8px; }
         .rank { font-weight: bold; opacity: 0.55; }
         .tile-title { font-weight: bold; }
         .ready { color: @success_color; }

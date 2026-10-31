@@ -9,7 +9,9 @@ import Foundation
 @MainActor
 final class MachineWindow {
     /// Open windows, newest last.
-    static var all: [MachineWindow] = []
+    static var all: [MachineWindow] = [] {
+        didSet { MyMachinesWindow.machinesChanged() }
+    }
 
     let window: Widget
     let machine: MachineController
@@ -37,6 +39,7 @@ final class MachineWindow {
     private let recordSection = Menu()
     private let debugSection = Menu()
     private let nextDiscSection = Menu()
+    private let myMachinesSection = Menu()
     private let recentNetworksMenu = Menu()
     private var mouseCaptured = false
     private var closing = false
@@ -45,9 +48,10 @@ final class MachineWindow {
     private var hardDiscButton: Widget?
 
     /// A standalone machine's window, or (given its controller) a network
-    /// station's, which leaves the station running when it closes.
-    init(app: OpaquePointer, machine station: MachineController? = nil) {
-        machine = station ?? MachineController()
+    /// station's, which leaves the station running when it closes, or one
+    /// for a machine already started (from My Machines).
+    init(app: OpaquePointer, machine given: MachineController? = nil) {
+        machine = given ?? MachineController()
         emulator = EmulatorView()
         window = adw_application_window_new(app.cast())!
         // The usual 832 x 576 picture, at this width, under the header bar.
@@ -106,11 +110,12 @@ final class MachineWindow {
         Self.all.append(self)
         guard !machine.isStation else { return }
 
+        MachineController.frontmost = machine
+        guard given == nil else { return }
         // A new window switches straight on, with the ROM last used.
         if let rom = AppSettings.shared.romPath {
             machine.start(romPath: rom)
         }
-        MachineController.frontmost = machine
         // A game the Game Library asked for, with no machine open.
         if machine.host != nil, let launch = MachineController.pendingLaunch {
             MachineController.pendingLaunch = nil
@@ -362,6 +367,7 @@ final class MachineWindow {
         let menu = Menu()
         menu.section { section in
             section.item("Game Library", "app.game-library")
+            section.item("My Machines", "app.my-machines")
             section.item("Network Studio", "app.network-studio")
             section.item("New Archimedes Window", "app.new-window")
         }
@@ -425,6 +431,8 @@ final class MachineWindow {
                     section.item("Import Machine Configuration…", "win.import-configuration")
                     section.item("Export Machine Configuration…", "win.export-configuration")
                 }
+                // Save to My Machines, and Update for one that came from there.
+                g_menu_append_section(submenu.pointer, nil, myMachinesSection.model)
             }
             submenus.submenu("View") { submenu in
                 submenu.section("Display") { section in
@@ -612,6 +620,11 @@ final class MachineWindow {
         actions.add("add-roms") { [weak self] in ROMLibrary.shared.chooseAndAdd(parent: self?.window) }
         actions.add("import-configuration") { machine.chooseImportConfiguration() }
         actions.add("export-configuration") { machine.chooseExportConfiguration() }
+        actions.add("save-to-my-machines") { SaveToMyMachines.ask(machine) }
+        actions.add("update-my-machine") {
+            guard let id = machine.savedMachineID, let entry = MyMachines.shared.entry(id) else { return }
+            SaveToMyMachines.save(machine, name: entry.name, over: id)
+        }
 
         actions.addRadio("display-style", state: machine.displayStyle.rawValue) { value in
             guard let style = DisplayStyle(rawValue: value) else { return }
@@ -681,6 +694,8 @@ final class MachineWindow {
             // A network's station has its setup kept by its network.
             actions["import-configuration"]?.isEnabled = !machine.isStation
             actions["export-configuration"]?.isEnabled = running && !machine.isStation
+            actions["save-to-my-machines"]?.isEnabled = running && !machine.isStation
+            actions["update-my-machine"]?.isEnabled = running && !machine.isStation
             actions["next-disc"]?.isEnabled = running && machine.sessionDiscsActive
             actions["full-speed"]?.setState(!machine.speedLimited)
             actions["mute"]?.setState(machine.muted)
@@ -709,6 +724,15 @@ final class MachineWindow {
         }
         observe(self) { [weak self] in
             self?.actions["keyboard-mode"]?.setState(KeyboardSettings.shared.mode.rawValue)
+        }
+        observe(self) { [weak self] in
+            guard let self else { return }
+            let entry = machine.savedMachineID.flatMap(MyMachines.shared.entry)
+            self.myMachinesSection.removeAll()
+            self.myMachinesSection.item("Save to My Machines…", "win.save-to-my-machines")
+            if let entry {
+                self.myMachinesSection.item("Update “\(entry.name)” in My Machines", "win.update-my-machine")
+            }
         }
         observe(self) { [weak self] in
             _ = AppSettings.shared.recentDiscs

@@ -246,6 +246,41 @@ extension Alerts {
         }
     }
 
+    /// Asks for one of `items`, as above, with a check box under the
+    /// drop-down (on to begin with): the index and whether it's ticked, or
+    /// nil if it's cancelled. `body` is the question, given the box's state.
+    static func chooseItem(_ heading: String, _ body: @escaping (Bool) -> String, items: [String], selected: Int,
+                           option: String, optionTooltip: String? = nil, button: String,
+                           parent: Widget?) async -> (Int, Bool)? {
+        let dialog = adw_alert_dialog_new(heading, body(true))!
+        var chosen = selected
+        var ticked = true
+        let dropDown = UI.dropDown(items, selected: selected) { chosen = $0 }
+        let check = UI.check(option, active: true) { on in
+            ticked = on
+            adw_alert_dialog_set_body(dialog.cast(), body(on))
+        }
+        check.setTooltip(optionTooltip)
+        let index = await withCheckedContinuation { continuation in
+            adw_alert_dialog_set_extra_child(dialog.cast(), UI.vbox(spacing: 12, [dropDown, check]))
+            adw_alert_dialog_add_response(dialog.cast(), "cancel", "Cancel")
+            adw_alert_dialog_add_response(dialog.cast(), "ok", button)
+            adw_alert_dialog_set_response_appearance(dialog.cast(), "ok", ADW_RESPONSE_SUGGESTED)
+            adw_alert_dialog_set_default_response(dialog.cast(), "ok")
+            adw_alert_dialog_set_close_response(dialog.cast(), "cancel")
+            let completion: @MainActor (String) -> Void = { continuation.resume(returning: $0 == "ok" ? chosen : nil) }
+            let callback: GAsyncReadyCallback = { source, result, data in
+                let completion = Unmanaged<Box<@MainActor (String) -> Void>>.fromOpaque(data!).takeRetainedValue().value
+                let response = source.flatMap { source in
+                    result.flatMap { String(gBorrowed: adw_alert_dialog_choose_finish(source.cast(), $0.opaque)) }
+                } ?? ""
+                MainActor.assumeIsolated { completion(response) }
+            }
+            adw_alert_dialog_choose(dialog.cast(), parent, nil, callback, Box(completion).retained)
+        }
+        return index.map { ($0, ticked) }
+    }
+
     /// A question with a widget of its own (an entry, say) under it: calls
     /// `completion` if `button` is chosen.
     static func askWithChild(_ heading: String, _ body: String?, child: Widget, button: String, parent: Widget?,

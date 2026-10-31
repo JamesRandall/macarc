@@ -130,6 +130,15 @@ static inline void la_breakpoint_set_bool(AdwBreakpoint *breakpoint, gpointer ob
     g_value_unset(&value);
 }
 
+/// Sets a box's (or other orientable's) orientation while a breakpoint applies.
+static inline void la_breakpoint_set_orientation(AdwBreakpoint *breakpoint, gpointer object, GtkOrientation orientation) {
+    GValue value = G_VALUE_INIT;
+    g_value_init(&value, GTK_TYPE_ORIENTATION);
+    g_value_set_enum(&value, orientation);
+    adw_breakpoint_add_setter(breakpoint, G_OBJECT(object), "orientation", &value);
+    g_value_unset(&value);
+}
+
 /// Every file's path in a dropped value (a file list, or one file), as a
 /// NULL-terminated array to free with g_strfreev, or NULL.
 static inline char **la_dropped_paths(const GValue *value) {

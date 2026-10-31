@@ -125,6 +125,11 @@ final class MachineController {
 
     @ObservationIgnored private var importedConfiguration: MachineConfiguration?
     @ObservationIgnored private var importedCMOSPath: String?
+    /// The My Machines entry this machine was started from or saved as.
+    var savedMachineID: UUID?
+    /// Started from My Machines, in a window of its own (its CMOS is the
+    /// entry's).
+    private(set) var startedFromMyMachines = false
 
     init() {
         stationID = nil
@@ -220,12 +225,20 @@ final class MachineController {
         // A Classic always starts from RISC OS's defaults.
         if importedConfiguration != nil {
             c.cmosPath = cmos
+            if Self.cmosNeedsSettingUp(cmos) { c.powerOnKeys = [0x34] }
         } else if session == nil, let d = FileManager.default.contents(atPath: cmos), !Machine.cmosNeverConfigured([UInt8](d)) {
             c.cmosPath = cmos
         } else {
             c.powerOnKeys = [0x34]
         }
         return c
+    }
+
+    /// A CMOS file missing, or one RISC OS never set up (as a created My
+    /// Machines entry's is at its first start): Delete held resets it.
+    private static func cmosNeedsSettingUp(_ path: String) -> Bool {
+        guard let d = FileManager.default.contents(atPath: path) else { return true }
+        return Machine.cmosNeverConfigured([UInt8](d))
     }
 
     /// Builds a machine for `hw`. Hard discs whose files have gone are
@@ -329,7 +342,9 @@ final class MachineController {
         }
     }
 
-    func importConfiguration(from url: URL, confirmRestart: Bool) async throws {
+    /// `savedMachine`: a My Machines entry's configuration, whose CMOS file
+    /// beside it is the machine's own (rather than a private copy).
+    func importConfiguration(from url: URL, confirmRestart: Bool, savedMachine: UUID? = nil) async throws {
         guard !isStation else { throw MachineError.badConfiguration("Use the network configuration for network stations") }
         var c = try MachineConfigurationFile.load(from: url)
         let rom = try ROMImage.load(paths: c.romPaths)
@@ -345,15 +360,24 @@ final class MachineController {
         // Consolidate chip sets using the existing ROM library importer.
         let installed = try ROMImporter.install(rom, into: ROMLibrary.directory)
         c.romPaths = [installed]
-        let profile = URL(fileURLWithPath: AppSettings.supportDirectory).appendingPathComponent("Profiles/Imported-\(UUID().uuidString).cmos")
+        let profile = savedMachine != nil ? url.deletingLastPathComponent().appendingPathComponent("machine.cmos")
+            : URL(fileURLWithPath: AppSettings.supportDirectory).appendingPathComponent("Profiles/Imported-\(UUID().uuidString).cmos")
         try FileManager.default.createDirectory(at: profile.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if let source = c.cmosPath { try Data(contentsOf: URL(fileURLWithPath: source)).write(to: profile, options: .atomic) }
+        if let source = c.cmosPath, URL(fileURLWithPath: source).standardizedFileURL != profile.standardizedFileURL {
+            try Data(contentsOf: URL(fileURLWithPath: source)).write(to: profile, options: .atomic)
+        }
         c.cmosPath = FileManager.default.fileExists(atPath: profile.path) ? profile.path : nil
+        if Self.cmosNeedsSettingUp(profile.path) { c.powerOnKeys = [0x34] }
         let m = try Machine(configuration: c, rom: rom)
         // Seed the private profile even when the input has no CMOS sidecar.
         try Data(m.cmos).write(to: profile, options: .atomic)
         stopRecordingIfNeeded(); endSession()
         importedConfiguration = c; importedCMOSPath = profile.path
+        // A My Machines entry keeps its CMOS from here on, so a power cycle
+        // mustn't hold Delete again (as a created one's first start does).
+        if savedMachine != nil { importedConfiguration?.powerOnKeys = [] }
+        savedMachineID = savedMachine
+        startedFromMyMachines = savedMachine != nil
         let hw = Hardware(model: c.model, cpu: c.cpu, ramKB: c.ramKB, monitor: c.monitorType, romPath: installed, hardDiscs: c.hardDiscs)
         AppSettings.shared.addROM(installed)
         adopt(hw); romVersion = rom.versionString; startError = nil
@@ -392,6 +416,18 @@ final class MachineController {
                 } catch { continuation.resume(throwing: error) }
             }
         }
+    }
+
+    /// What My Machines saves: the machine's configuration as it runs now
+    /// (its hardware, ROM and hard discs), its CMOS, and the screen as a PNG.
+    func currentSetup() async throws -> (MachineConfiguration, [UInt8], Data?) {
+        guard let host, !isStation else { throw MachineError.badConfiguration("No running machine to save") }
+        syncHardDiscs()
+        let screen = screenshotPNG()
+        let (configuration, cmos) = await withCheckedContinuation { (continuation: CheckedContinuation<(MachineConfiguration, [UInt8]), Never>) in
+            host.send { s in continuation.resume(returning: (s.machine.configuration, s.machine.cmos)) }
+        }
+        return (configuration, cmos, screen)
     }
 
     /// Changes the model, processor, memory, ROM or hard discs: a new
@@ -790,17 +826,28 @@ final class MachineController {
         return copy
     }
 
-    /// Asks how big a drive it is (the smallest that holds `minimumBytes`
-    /// is chosen to begin with), then where to save it.
-    private func chooseNewHardDisc(drive: Int, heading: String, message: String, minimumBytes: Int = 0) async -> (URL, HardDiscGeometry)? {
+    private func chooseNewHardDisc(drive: Int, heading: String, message: @escaping (_ system: Bool) -> String,
+                                   minimumBytes: Int = 0) async -> (URL, HardDiscGeometry, system: Bool)? {
+        await Self.chooseNewHardDisc(model: model, drive: drive, heading: heading, message: message, minimumBytes: minimumBytes, parent: parent)
+    }
+
+    /// Asks how big a drive it is, for `model`'s interface (ST506 or IDE
+    /// sizes; the smallest that holds `minimumBytes` is chosen to begin
+    /// with), and whether to put !System, !Scrap and Library on it, then
+    /// where to save it. `message` says what the disc will hold, with them
+    /// or without.
+    static func chooseNewHardDisc(model: MachineModel, drive: Int, heading: String, message: @escaping (_ system: Bool) -> String,
+                                  minimumBytes: Int = 0, name: String? = nil, parent: Widget?) async -> (URL, HardDiscGeometry, system: Bool)? {
         let presets = model.hasIDE ? HardDiscGeometry.idePresets : HardDiscGeometry.presets
         let initial = presets.firstIndex { $0.geometry.byteCount >= minimumBytes } ?? presets.count - 1
-        guard let index = await Alerts.chooseItem(heading, message, items: presets.map(\.name), selected: initial,
-                                                  button: "Choose Where…", parent: parent) else { return nil }
+        guard let (index, system) = await Alerts.chooseItem(heading, message, items: presets.map(\.name), selected: initial,
+                                                            option: "Add !System, !Scrap and Library",
+                                                            optionTooltip: "!System, whose Modules directory applications load shared modules from (and installers such as Acorn C/C++’s add theirs to), !Scrap, where applications put files they pass to each other, set up as on Acorn’s RISC OS 3.1 hard discs; and an empty Library, where installers put their tools (RISC OS uses it when it starts on the hard disc).",
+                                                            button: "Choose Where…", parent: parent) else { return nil }
         try? FileManager.default.createDirectory(atPath: AppSettings.hardDiscDirectory, withIntermediateDirectories: true)
         let url: URL? = await withCheckedContinuation { continuation in
             var resumed = false
-            FileDialogs.save(parent: parent, title: heading, name: "Hard Disc \(drive + 4).hdf", filters: [Self.hardDiscFilter],
+            FileDialogs.save(parent: parent, title: heading, name: name ?? "Hard Disc \(drive + 4).hdf", filters: [hardDiscFilter],
                              folder: URL(fileURLWithPath: AppSettings.hardDiscDirectory)) { url in
                 resumed = true
                 continuation.resume(returning: url)
@@ -808,16 +855,17 @@ final class MachineController {
                 if !resumed { continuation.resume(returning: nil) }
             }
         }
-        return url.map { ($0, presets[index].geometry) }
+        return url.map { ($0, presets[index].geometry, system) }
     }
 
     /// Creates a formatted image of a chosen size and fits it (power cycles).
     func newHardDisc(drive: Int) async {
-        guard let (url, geometry) = await chooseNewHardDisc(drive: drive, heading: "New Hard Disc",
-                                                            message: "A new hard disc, formatted and empty, for drive \(drive + 4). The machine will be power cycled.") else { return }
+        guard let (url, geometry, system) = await chooseNewHardDisc(drive: drive, heading: "New Hard Disc", message: {
+            $0 ? "A new formatted hard disc, with !System, !Scrap and Library, for drive \(drive + 4). The machine will be power cycled."
+               : "A new hard disc, formatted and empty, for drive \(drive + 4). The machine will be power cycled."
+        }) else { return }
         do {
-            // With !System (for installers that put modules in System:Modules) and !Scrap, as on Acorn's RISC OS 3.1 hard discs, and Library.
-            try ADFSFormatter.createFormattedImage(path: url.path, geometry: geometry, name: (url.lastPathComponent as NSString).deletingPathExtension, system: true)
+            try ADFSFormatter.createFormattedImage(path: url.path, geometry: geometry, name: (url.lastPathComponent as NSString).deletingPathExtension, system: system)
         } catch {
             alert("Could not create the hard disc", "\(error)")
             return
@@ -863,11 +911,11 @@ final class MachineController {
         if given == nil { sources = await chooseFileSources("Files for a New Hard Disc") }
         guard !sources.isEmpty, let items = items(from: sources) else { return }
         let needed = items.reduce(0x10000) { $0 + $1.data.count + 2048 }
-        guard let (url, geometry) = await chooseNewHardDisc(drive: drive, heading: "New Hard Disc from Files",
-                                                            message: "A new hard disc holding the \(items.count) files from \(Self.describe(sources)), for drive \(drive + 4). The machine will be power cycled.",
-                                                            minimumBytes: needed) else { return }
+        guard let (url, geometry, system) = await chooseNewHardDisc(drive: drive, heading: "New Hard Disc from Files", message: {
+            "A new hard disc holding the \(items.count) files from \(Self.describe(sources))\($0 ? ", !System, !Scrap and Library" : ""), for drive \(drive + 4). The machine will be power cycled."
+        }, minimumBytes: needed) else { return }
         do {
-            let (files, directories) = ADFSFormatter.withSystem(items)
+            let (files, directories) = system ? ADFSFormatter.withSystem(items) : (items, [])
             try ADFSHardDiscBuilder.create(path: url.path, geometry: geometry, name: (url.lastPathComponent as NSString).deletingPathExtension,
                                            items: files, directories: directories)
         } catch {

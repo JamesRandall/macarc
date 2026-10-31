@@ -19,6 +19,12 @@ import Foundation
 /// - LINUXARCH_SELFTEST_ADD_GAMES: files to add to My Games (comma
 ///   separated), saving the details as they're guessed.
 /// - LINUXARCH_SELFTEST_PLAY: "first" plays the first of My Games.
+/// - LINUXARCH_SELFTEST_MYMACHINES: saves the machine to My Machines,
+///   starts it from there, creates another with Create Machine (an A5000
+///   with a new hard disc, if a ROM suits one) and starts that, capturing
+///   the gallery (out-mymachines.png, out-mymachines2.png), the Create
+///   Machine dialog (out-create.png) and the machines' windows
+///   (out-mymachine.png, out-created.png).
 @MainActor
 final class SelfTest {
     static let current: SelfTest? = {
@@ -119,7 +125,84 @@ final class SelfTest {
         let windowPNG = output.deletingPathExtension().path + "-window.png"
         note("window capture: \(la_save_widget_png(window.window, windowPNG) != 0)")
         let opens = (environment["LINUXARCH_SELFTEST_OPEN"] ?? "").split(separator: ",").map(String.init)
-        capture(opens[...], in: window)
+        guard environment["LINUXARCH_SELFTEST_MYMACHINES"] != nil, machine.host != nil else {
+            capture(opens[...], in: window)
+            return
+        }
+        Task { @MainActor in
+            await self.myMachines(machine)
+            self.capture(opens[...], in: window)
+        }
+    }
+
+    /// Saves, creates and starts My Machines entries (as the Mac app's
+    /// MyMachinesSelfTest).
+    private func myMachines(_ machine: MachineController) async {
+        func capture(_ widget: Widget?, _ suffix: String) {
+            guard let widget else { return note("\(suffix): no window") }
+            note("\(suffix): \(la_save_widget_png(widget, output.deletingPathExtension().path + "-\(suffix).png") != 0)")
+        }
+        func windowOf(_ controller: MachineController) -> Widget? {
+            MachineWindow.all.first { $0.machine === controller }?.window
+        }
+        let machines = MyMachines.shared
+        do {
+            let id = try await machines.save(machine, name: "Self-test \(machine.model.rawValue)")
+            guard let entry = machines.entry(id) else { throw MachineError.badConfiguration("saved entry missing") }
+            let files = ["info.json", "machine.json", "machine.cmos", "screen.png"].filter {
+                FileManager.default.fileExists(atPath: entry.folder.appendingPathComponent($0).path)
+            }
+            note("saved: \(entry.name) files=\(files) problem=\(entry.problem ?? "none") savedID=\(machine.savedMachineID == id)")
+            let gallery = MyMachinesWindow.show()
+            try await Task.sleep(for: .seconds(2))
+            capture(gallery.window, "mymachines")
+
+            let started = try await machines.prepare(id)
+            MachineWindow(app: LinuxArchApp.shared.app, machine: started).present()
+            try await Task.sleep(for: .seconds(4))
+            note("started: model=\(started.model.rawValue) cpu=\(started.cpu.rawValue) ram=\(started.ramKB) rom=\(started.romVersion) running=\(started.host != nil) fromMyMachines=\(started.startedFromMyMachines) error=\(started.startError ?? "none")")
+            capture(windowOf(started), "mymachine")
+
+            // Created by hand: an A5000 with a new hard disc, never started.
+            let settings = AppSettings.shared
+            let model: MachineModel = settings.preferredROM(for: .a5000) != nil ? .a5000 : .a440
+            var discs: [String?] = Array(repeating: nil, count: model.hardDiscSlots)
+            let disc = (AppSettings.supportDirectory as NSString).appendingPathComponent("Created \(model.rawValue.replacingOccurrences(of: "/", with: "-")) drive 4.hdf")
+            try? FileManager.default.removeItem(atPath: disc)
+            let geometry = (model.hasIDE ? HardDiscGeometry.idePresets : HardDiscGeometry.presets)[0].geometry
+            try ADFSFormatter.createFormattedImage(path: disc, geometry: geometry, name: "Created", system: true)
+            discs[0] = disc
+            gallery.showCreate()
+            try await Task.sleep(for: .seconds(1.5))
+            capture(gallery.window, "create")
+            let name = "Created \(model.rawValue)"
+            gallery.createForSelfTest(name: name, model: model, cpu: model.cpuChoices.last ?? model.defaultCPU,
+                                      ramKB: model.ramChoices.last ?? model.defaultRAMKB, monitor: model.monitorChoices.last ?? .standard,
+                                      hardDiscs: discs)
+            guard let made = machines.entries.first(where: { $0.name == name }) else { throw MachineError.badConfiguration("created entry missing") }
+            note("created: rom=\(MachineTiles.rom(made) ?? "none") keys=\(made.configuration?.powerOnKeys ?? []) cmos=\(made.configuration?.cmosPath ?? "none") summary=\(MachineTiles.summary(made))")
+            let second = try await machines.prepare(made.id)
+            MachineWindow(app: LinuxArchApp.shared.app, machine: second).present()
+            try await Task.sleep(for: .seconds(3))
+            let after = machines.entry(made.id)?.configuration
+            note("created started: model=\(second.model.rawValue) cpu=\(second.cpu.rawValue) ram=\(second.ramKB) monitor=\(second.monitor.rawValue) rom=\(second.romVersion) running=\(second.host != nil) error=\(second.startError ?? "none")")
+            note("after first start: keys=\(after?.powerOnKeys ?? [99]) cmos=\(after?.cmosPath ?? "none") hardDiscs=\(second.hardDiscs.map { $0.map { ($0 as NSString).lastPathComponent } ?? "-" })")
+            // Delete held at its first start: RISC OS sets its CMOS up.
+            try await Task.sleep(for: .seconds(8))
+            let (_, cmos, _) = try await second.currentSetup()
+            note("created CMOS set up: \(!Machine.cmosNeverConfigured(cmos))")
+            capture(windowOf(second), "created")
+            // Update “name” in My Machines: its screen and CMOS saved back.
+            try await machines.save(second, name: made.name, over: made.id)
+            let updated = machines.entry(made.id)
+            note("updated: screen=\(updated.map { FileManager.default.fileExists(atPath: $0.screenURL.path) } ?? false) entries=\(machines.entries.count) running=\(machines.entries.filter { machines.running($0.id) != nil }.map(\.name))")
+            gallery.select(named: made.name)
+            gallery.present()
+            try await Task.sleep(for: .seconds(1.5))
+            capture(gallery.window, "mymachines2")
+        } catch {
+            note("my machines error: \(error)")
+        }
     }
 
     /// The app's windows.

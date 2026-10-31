@@ -45,7 +45,8 @@ you choose. The Game Library's catalogue and covers come from
 
 Settings are JSON in `$XDG_CONFIG_HOME/linuxarch/settings.json`; ROMs, CMOS
 profiles, hard discs, quick saves, the Game Library (`Library/Classics` and
-`Library/MyGames`) and Internet Econet room credentials (`Econet/rooms.json`,
+`Library/MyGames`), My Machines (`Machines`, as the Mac app's) and Internet
+Econet room credentials (`Econet/rooms.json`,
 readable only by you) are in `$XDG_DATA_HOME/linuxarch` (the Mac app's
 Application Support/MacArch), as is the agent socket that `macarch-mcp
 --attach` looks for there. New networks go in Documents/LinuxArch Networks.
@@ -53,7 +54,8 @@ Application Support/MacArch), as is the agent socket that `macarch-mcp
 `LINUXARCH_SELFTEST=out.png` runs the first window's machine and writes its
 frame, the picture as drawn, the window and a report, then quits (see
 `SelfTest.swift` for its options: ROM, model, disc, text to type, style,
-games to add and play, and the dialogs and windows to open and capture). With
+games to add and play, My Machines to save, create and start, and the dialogs
+and windows to open and capture). With
 `MACARCH_AGENT_SOCKET` set it serves agents too, so a test can drive it with
 `macarch-mcp --attach` while it runs.
 
@@ -78,6 +80,7 @@ games to add and play, and the dialogs and windows to open and capture). With
 | `DiscContents/DiscContentsModel.swift`, `DiscContentsWindow.swift` | `Sources/DiscContentsModel.swift` (with an undo stack of its own), `Sources/DiscContentsWindow.swift` |
 | `Services/VideoRecorder.swift` (AVFoundation) | `Sources/VideoRecorder.swift` (GStreamer), `System/CGStreamer` |
 | `Services/AppAgent.swift`, `AppMachineDirectory.swift`, `UI/AgentWindows.swift` | `Sources/AppAgent.swift`, `Sources/AppMachineDirectory.swift`, `Sources/AgentWindows.swift` |
+| `Library/MyMachines.swift`, `Library/MyMachinesView.swift`, `Services/MyMachinesSelfTest.swift` | `Sources/MyMachines.swift` (the same), `Sources/MyMachinesWindow.swift` (the gallery and Create Machine), `Sources/SelfTest.swift` |
 | `Library/` (Game Library, Classics, My Games, playing) | `Sources/ClassicsLibrary.swift`, `MyGames.swift`, `GameLibrary.swift`, `ClassicPlay.swift`, `GameLibraryWindow.swift`, `GameDetailsDialog.swift` |
 | `Network/`, `Services/NetworkHost.swift` (the Network Studio) | `Sources/NetworkProject.swift`, `NetworkPackage.swift`, `NetworkSession.swift`, `NetworkSession+Internet.swift`, `NetworkHost.swift`, `RecentNetworks.swift`, `ThumbnailCache.swift` (all much the same); `NetworkStudioWindow.swift` (the window, tiles and focus), `NetworkCanvasView.swift`, `NetworkPanels.swift` (inspector, traffic, Mandelbrot), `NetworkDialogs.swift` (new network, sharing, joining) |
 | `UI/AboutPanel.swift`, `UI/WhatsNewView.swift` | `Sources/AppDialogs.swift` (with the shortcuts dialog) |
@@ -97,7 +100,9 @@ change, as SwiftUI does.
   Archimedes', so ⌘ becomes Ctrl+Shift and ⌘⇧ or ⌘⌥ Ctrl+Shift+Alt (as in
   LinuxBeeb and GNOME's Terminal); zoom is Ctrl+0/+/−, fullscreen F11,
   preferences Ctrl+, (`LinuxArchApp.shortcuts`, and Help ▸ Keyboard
-  Shortcuts). Ctrl+Shift+M releases a captured mouse.
+  Shortcuts). Ctrl+Shift+M releases a captured mouse. My Machines is
+  Ctrl+Shift+Alt+K: the Mac's ⇧⌘M would be Ctrl+Shift+Alt+M, which is Mute
+  (⌥⌘M).
 - **The mouse:** a click captures it; on Wayland the pointer is held still
   with the pointer-constraints protocol (GTK has no pointer lock). Left is
   Select, middle Menu, right Adjust (Preferences can swap Menu and Adjust).
@@ -118,7 +123,8 @@ change, as SwiftUI does.
   RISC OS types in their names), as LinuxBeeb does, and its undo is its own.
 - **Opening with** an Archimedes, the Game Library or the Network Studio is a
   choice in Preferences ▸ General (the Mac app's opening screen; there's no
-  separate welcome screen: a window without a ROM is the setup page).
+  separate welcome screen: a window without a ROM is the setup page, with
+  the welcome screen's My Machines button).
 
 ## How the shared code changed for Linux
 

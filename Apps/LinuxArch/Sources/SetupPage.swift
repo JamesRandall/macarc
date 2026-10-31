@@ -34,8 +34,9 @@ final class SetupPage {
 
         switchOn = UI.button("_Switch On", classes: ["suggested-action", "pill"]) {}
         let addROMs = UI.button("_Add ROMs…", classes: ["pill"]) {}
-        let importButton = UI.button("_Import Machine…", classes: ["pill"]) {}
-        let buttons = UI.hbox(spacing: 12, [addROMs, importButton, switchOn])
+        let myMachines = UI.button("_My Machines", classes: ["pill"]) {}
+        myMachines.setTooltip("The machines you’ve saved, set up as you left them; import machine configurations there too")
+        let buttons = UI.hbox(spacing: 12, [addROMs, myMachines, switchOn])
         buttons.align(horizontal: GTK_ALIGN_CENTER)
         let content = UI.vbox(spacing: 24, [group, errorLabel, buttons])
         let clamp = adw_clamp_new()!
@@ -58,7 +59,7 @@ final class SetupPage {
             machine.setHardware(model: self.model, romPath: rom)
         }
         onSignal(addROMs, "clicked") { [weak self] in ROMLibrary.shared.chooseAndAdd(parent: self?.widget) }
-        onSignal(importButton, "clicked") { machine.chooseImportConfiguration() }
+        onSignal(myMachines, "clicked") { MyMachinesWindow.show() }
 
         observe(self) { [weak self] in
             guard let self else { return }
